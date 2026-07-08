@@ -25,6 +25,7 @@ import { IMultiFileEditInternalTelemetryService } from '../../../../platform/mul
 import { Completion } from '../../../../platform/nesFetch/common/completionsAPI';
 import { CompletionsFetchError } from '../../../../platform/nesFetch/common/completionsFetchService';
 import { FinishedCallback, IResponseDelta } from '../../../../platform/networking/common/fetch';
+import { IChatEndpoint, isCAPIEndpoint } from '../../../../platform/networking/common/networking';
 import { FilterReason } from '../../../../platform/networking/common/openai';
 import { IAlternativeNotebookContentEditGenerator, NotebookEditGenerationTelemtryOptions, NotebookEditGenrationSource } from '../../../../platform/notebook/common/alternativeContentEditGenerator';
 import { INotebookService } from '../../../../platform/notebook/common/notebookService';
@@ -44,6 +45,11 @@ import { isEqual } from '../../../../util/vs/base/common/resources';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { generateUuid } from '../../../../util/vs/base/common/uuid';
 import { IInstantiationService } from '../../../../util/vs/platform/instantiation/common/instantiation';
+import { OpenAIEndpoint } from '../../../byok/node/openAIEndpoint';
+import { resolveModelInfo } from '../../../byok/common/byokProvider';
+import { FeatherlessBYOKLMProvider } from '../../../byok/vscode-node/featherlessProvider';
+import { IBYOKStorageService } from '../../../byok/vscode-node/byokStorageService';
+import { OmenIDEConfig, OmenIDEDefaults } from '../../../omenide/common/omenideConfig';
 import { NotebookEdit, Position, Range, TextEdit } from '../../../../vscodeTypes';
 import { OutcomeAnnotation, OutcomeAnnotationLabel } from '../../../inlineChat/node/promptCraftingTypes';
 import { Lines, LinesEdit } from '../../../prompt/node/editGeneration';
@@ -286,6 +292,7 @@ export class CodeMapper {
 
 	static closingXmlTag = 'copilot-edited-file';
 	private shortContextLimit: number;
+	private readonly _configurationService: IConfigurationService;
 
 	constructor(
 		@IEndpointProvider private readonly endpointProvider: IEndpointProvider,
@@ -302,7 +309,9 @@ export class CodeMapper {
 		@IOctoKitService private readonly octoKitService: IOctoKitService,
 		@INotebookService private readonly notebookService: INotebookService,
 		@IConfigurationService configurationService: IConfigurationService,
+		@IBYOKStorageService private readonly _byokStorage: IBYOKStorageService,
 	) {
+		this._configurationService = configurationService;
 		this.shortContextLimit = configurationService.getExperimentBasedConfig<number>(ConfigKey.Advanced.InstantApplyShortContextLimit, experimentationService) ?? 8000;
 	}
 
@@ -316,6 +325,42 @@ export class CodeMapper {
 		return this.instantiationService.createInstance(ProxyInstantApplyShortEndpoint);
 	}
 
+	private async getFastApplyEndpoint(): Promise<IChatEndpoint> {
+		try {
+			const utility = await this.endpointProvider.getChatEndpoint('copilot-utility');
+			if (isCAPIEndpoint(utility)) {
+				return utility;
+			}
+		} catch {
+			// fall through to Featherless
+		}
+
+		const apiKey = await this._byokStorage.getAPIKey(FeatherlessBYOKLMProvider.providerName);
+		if (apiKey) {
+			const modelId = this._configurationService.getNonExtensionConfig<string>(OmenIDEConfig.FeatherlessChatModel)
+				?? OmenIDEDefaults.chatModel;
+			const modelInfo = resolveModelInfo(modelId, FeatherlessBYOKLMProvider.providerName, {
+				[modelId]: {
+					name: 'GLM-5.2',
+					contextWindow: 256000,
+					maxInputTokens: 224000,
+					maxOutputTokens: 32000,
+					toolCalling: true,
+					vision: false,
+					streaming: true,
+				},
+			});
+			return this.instantiationService.createInstance(
+				OpenAIEndpoint,
+				modelInfo,
+				apiKey,
+				`${OmenIDEDefaults.featherlessBaseUrl}/chat/completions`,
+			);
+		}
+
+		return this.endpointProvider.getChatEndpoint('copilot-utility');
+	}
+
 	public async mapCode(request: ICodeMapperRequestInput, resultStream: MappedEditsResponseStream, telemetryInfo: ICodeMapperTelemetryInfo | undefined, token: CancellationToken): Promise<CodeMapperOutcome | undefined> {
 
 		const fastEdit = await this.mapCodeUsingFastEdit(request, resultStream, telemetryInfo, token);
@@ -323,8 +368,8 @@ export class CodeMapper {
 			return fastEdit;
 		}
 		// continue with "slow rewrite endpoint" when fast rewriting was not possible
-		// use copilot base as fallback
-		const chatEndpoint = await this.endpointProvider.getChatEndpoint('copilot-utility');
+		// use Featherless GLM-5.2 (OmenIDE) or copilot-utility as fallback
+		const chatEndpoint = await this.getFastApplyEndpoint();
 
 		// Only attempt a full file rewrite if the original document fits into 3/4 of the max output token limit, leaving space for the model to add code. The limit is currently a flat 4K tokens from CAPI across all our models.
 		// If there are multiple input documents, pick the longest one to base the limit on

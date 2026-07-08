@@ -34,9 +34,7 @@ export class CompletionsCoreContribution extends Disposable {
 			const copilotToken = this._copilotToken.read(reader);
 
 			let hasInstantiatedProvider = false;
-			// Completions require a Copilot token to call the completions endpoint, so don't
-			// register the provider in air-gapped / signed-out scenarios — it would just fail
-			// with GitHubLoginFailedError on every keystroke.
+			// Classic CAPI completions still require a Copilot token; Featherless FIM is registered separately.
 			const wantsProvider = unificationStateValue?.codeUnification || extensionUnification || configEnabled || copilotToken?.isNoAuthUser;
 			if (wantsProvider && copilotToken) {
 				const provider = _copilotInlineCompletionItemProviderService.getOrCreateProvider();
@@ -46,7 +44,7 @@ export class CompletionsCoreContribution extends Disposable {
 						provider,
 						{
 							debounceDelayMs: 0,
-							excludes: ['github.copilot'],
+							excludes: ['github.copilot', 'omenide-fim'],
 							groupId: 'completions'
 						}
 					)

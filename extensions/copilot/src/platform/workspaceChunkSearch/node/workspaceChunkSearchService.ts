@@ -111,6 +111,7 @@ export class WorkspaceChunkSearchService extends Disposable implements IWorkspac
 		@IGithubAvailableEmbeddingTypesService private readonly _availableEmbeddingTypes: IGithubAvailableEmbeddingTypesService,
 		@ILogService private readonly _logService: ILogService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
 	) {
 		super();
 
@@ -122,7 +123,9 @@ export class WorkspaceChunkSearchService extends Disposable implements IWorkspac
 	}
 
 	private async tryInit(silent: boolean): Promise<WorkspaceChunkSearchServiceImpl | undefined> {
-		if (!this._authenticationService.copilotToken || this._authenticationService.copilotToken.isNoAuthUser) {
+		const featherlessKey = await this._extensionContext.secrets.get('copilot-byok-Featherless-api-key');
+		const hasFeatherless = !!featherlessKey?.trim();
+		if ((!this._authenticationService.copilotToken || this._authenticationService.copilotToken.isNoAuthUser) && !hasFeatherless) {
 			return undefined;
 		}
 

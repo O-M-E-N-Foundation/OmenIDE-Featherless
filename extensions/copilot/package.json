@@ -1816,6 +1816,24 @@
         }
       },
       {
+        "vendor": "featherless",
+        "displayName": "Featherless",
+        "configuration": {
+          "type": "object",
+          "properties": {
+            "apiKey": {
+              "type": "string",
+              "secret": true,
+              "description": "API key for Featherless.ai",
+              "title": "API Key"
+            }
+          },
+          "required": [
+            "apiKey"
+          ]
+        }
+      },
+      {
         "vendor": "openai",
         "displayName": "OpenAI",
         "configuration": {
@@ -2422,6 +2440,26 @@
       }
     ],
     "commands": [
+      {
+        "command": "omenide.configureFeatherlessApiKey",
+        "title": "Configure Featherless API Key",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.setFeatherlessApiKey",
+        "title": "Set Featherless API Key",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.hasFeatherlessApiKey",
+        "title": "Has Featherless API Key",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.resetFeatherlessApiKey",
+        "title": "Clear Featherless API Key",
+        "category": "Omen IDE"
+      },
       {
         "command": "github.copilot.chat.triggerPermissiveSignIn",
         "title": "%github.copilot.command.triggerPermissiveSignIn%"
@@ -3222,6 +3260,31 @@
       }
     ],
     "configuration": [
+      {
+        "title": "Omen IDE",
+        "properties": {
+          "omenide.featherless.chatModel": {
+            "type": "string",
+            "default": "zai-org/GLM-5.2",
+            "description": "Featherless chat model for agent mode and fast-apply (GLM-5.2)."
+          },
+          "omenide.featherless.embeddingModel": {
+            "type": "string",
+            "default": "Qwen/Qwen3-Embedding-8B",
+            "description": "Featherless embeddings model for @codebase semantic search."
+          },
+          "omenide.featherless.completionModel": {
+            "type": "string",
+            "default": "Etherll/Qwen2.5-CodeFIM-1.5B-v2",
+            "description": "Featherless FIM model for Tab autocomplete."
+          },
+          "omenide.featherless.autocomplete.enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable Featherless FIM Tab autocomplete."
+          }
+        }
+      },
       {
         "title": "GitHub Copilot Chat",
         "id": "stable",

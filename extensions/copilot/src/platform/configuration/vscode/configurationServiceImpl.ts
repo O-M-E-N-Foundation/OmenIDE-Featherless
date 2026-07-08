@@ -295,8 +295,14 @@ export class ConfigurationServiceImpl extends AbstractConfigurationService {
 			const propertyGroups = config.map((c) => c.properties);
 			const extensionConfigProps = Object.assign({}, ...propertyGroups);
 			for (const key in extensionConfigProps) {
+				// Only dump settings that live under the Copilot namespace; other
+				// contributed settings (e.g. OmenIDE's `omenide.*`) are not part of
+				// `this.config` (which is scoped to `github.copilot`).
+				if (!key.startsWith(`${CopilotConfigPrefix}.`)) {
+					continue;
+				}
 				const localKey = key.replace(`${CopilotConfigPrefix}.`, '');
-				const value = localKey.split('.').reduce((o, i) => o[i], this.config);
+				const value = localKey.split('.').reduce<any>((o, i) => (o == null ? undefined : o[i]), this.config);
 
 				if (typeof value === 'object' && value !== null) {
 					// Dump objects as their properties, filtering secret_key

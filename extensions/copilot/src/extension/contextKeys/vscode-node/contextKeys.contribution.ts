@@ -16,7 +16,6 @@ import { TelemetryData } from '../../../platform/telemetry/common/telemetryData'
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { autorun } from '../../../util/vs/base/common/observableInternal';
 import { GHPR_EXTENSION_ID } from '../../chatSessions/vscode/chatSessionsUriHandler';
-import { isClientBYOKAllowed } from '../../byok/common/byokProvider';
 import { EXTENSION_ID } from '../../common/constants';
 
 const welcomeViewContextKeys = {
@@ -224,13 +223,8 @@ export class ContextKeysContribution extends Disposable {
 	}
 
 	private async _updateClientByokEnabledContext() {
-		const hasGitHubSession = !!this._authenticationService.anyGitHubSession;
-		try {
-			const copilotToken = await this._authenticationService.getCopilotToken();
-			commands.executeCommand('setContext', clientByokEnabledContextKey, isClientBYOKAllowed(hasGitHubSession, copilotToken));
-		} catch (e) {
-			commands.executeCommand('setContext', clientByokEnabledContextKey, isClientBYOKAllowed(hasGitHubSession, undefined));
-		}
+		// OmenIDE: BYOK providers (Featherless) are always enabled without GitHub/Copilot auth.
+		commands.executeCommand('setContext', clientByokEnabledContextKey, true);
 	}
 
 	private _updateShowLogViewContext() {

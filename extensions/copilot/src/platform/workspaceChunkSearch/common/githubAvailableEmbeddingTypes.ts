@@ -14,6 +14,7 @@ import { IAuthenticationService } from '../../authentication/common/authenticati
 import { ConfigKey, IConfigurationService } from '../../configuration/common/configurationService';
 import { EmbeddingType } from '../../embeddings/common/embeddingsComputer';
 import { IEnvService } from '../../env/common/envService';
+import { IVSCodeExtensionContext } from '../../extContext/common/extensionContext';
 import { getGithubMetadataHeaders } from '../../github/common/githubApiFetcherService';
 import { ILogService } from '../../log/common/logService';
 import { Response } from '../../networking/common/fetcherService';
@@ -62,6 +63,7 @@ export class GithubAvailableEmbeddingTypesService implements IGithubAvailableEmb
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@IExperimentationService private readonly _experimentationService: IExperimentationService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
 	) {
 		this._cached = this._authService.getGitHubSession('any', { silent: true }).then(session => {
 			if (!session) {
@@ -192,6 +194,11 @@ export class GithubAvailableEmbeddingTypesService implements IGithubAvailableEmb
 	}
 
 	async getPreferredType(silent: boolean): Promise<EmbeddingType | undefined> {
+		const featherlessKey = await this._extensionContext.secrets.get('copilot-byok-Featherless-api-key');
+		if (featherlessKey?.trim()) {
+			return EmbeddingType.featherless_qwen3_8b;
+		}
+
 		const result = await this.getAllAvailableTypes(silent);
 		if (!result.isOk()) {
 			this._logService.info(`GithubAvailableEmbeddingTypesManager: Could not find any available embedding types. Error: ${result.err.type}`);

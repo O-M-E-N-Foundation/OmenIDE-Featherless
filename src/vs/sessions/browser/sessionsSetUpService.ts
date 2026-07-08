@@ -6,7 +6,9 @@
 import './media/sessionsSetUp.css';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../base/common/lifecycle.js';
 import { DeferredPromise, disposableTimeout } from '../../base/common/async.js';
-import { createDecorator, IInstantiationService } from '../../platform/instantiation/common/instantiation.js';
+import { createDecorator, IInstantiationService, ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
+import { Action2, registerAction2 } from '../../platform/actions/common/actions.js';
+import { IDialogService } from '../../platform/dialogs/common/dialogs.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../platform/storage/common/storage.js';
 import { IUserDataProfileStorageService } from '../../platform/userDataProfile/common/userDataProfileStorageService.js';
@@ -33,9 +35,14 @@ import { $, append } from '../../base/browser/dom.js';
 import { Dialog, DialogContentsAlignment } from '../../base/browser/ui/dialog/dialog.js';
 import { createWorkbenchDialogOptions } from '../../workbench/browser/parts/dialogs/dialog.js';
 import { MarkdownString } from '../../base/common/htmlContent.js';
-import { localize } from '../../nls.js';
+import { localize, localize2 } from '../../nls.js';
 
 const AIDisabledConfig = 'chat.disableAIFeatures';
+
+/** Set once the Omen IDE setup walkthrough has been shown, so it only auto-opens on first run. */
+const OMENIDE_WALKTHROUGH_SHOWN_KEY = 'omenide.welcome.walkthroughShown';
+/** Id of the Omen IDE setup walkthrough defined in gettingStartedContent.ts. */
+const OMENIDE_SETUP_WALKTHROUGH_ID = 'Setup';
 
 export const ISessionsSetUpService = createDecorator<ISessionsSetUpService>('sessionsSetUpService');
 
@@ -63,6 +70,10 @@ function shouldSkipSessionsWelcome(environmentService: IWorkbenchEnvironmentServ
 		return true;
 	}
 	return typeof globalThis.location !== 'undefined' && new URLSearchParams(globalThis.location.search).has('skip-sessions-welcome');
+}
+
+function usesFeatherlessOnlyProvider(productService: IProductService): boolean {
+	return productService.defaultChatAgent?.provider?.default?.id === 'featherless';
 }
 
 class SessionsSetUpWidget extends Disposable {
@@ -159,6 +170,10 @@ class SessionsSetUpWidget extends Disposable {
 			return;
 		}
 		if (!initialAccount) {
+			if (usesFeatherlessOnlyProvider(this.productService)) {
+				await this._completeFeatherlessOnlySetup();
+				return;
+			}
 			this._showWelcome(false);
 			return;
 		}
@@ -278,9 +293,16 @@ class SessionsSetUpWidget extends Disposable {
 				}
 
 				await this._showWelcomeDialog();
+			} else if (usesFeatherlessOnlyProvider(this.productService)) {
+				if (isFirstLaunch) {
+					await this._showWelcomeDialog();
+				}
+				await this._completeFeatherlessOnlySetup();
 			} else {
 				await this._showSignInDialog();
 			}
+		} else if (usesFeatherlessOnlyProvider(this.productService)) {
+			await this._completeFeatherlessOnlySetup();
 		} else {
 			await this._showSignInDialog();
 		}
@@ -297,6 +319,32 @@ class SessionsSetUpWidget extends Disposable {
 		overlay.setAttribute('aria-label', localize('loading', "Loading"));
 		append(overlay, $('div.sessions-loading-icon.codicon.codicon-agent'));
 		return { element: overlay, dispose: () => overlay.remove() };
+	}
+
+	private async _completeFeatherlessOnlySetup(): Promise<void> {
+		this.logService.info('[sessions welcome] Featherless-only Omen IDE — skipping GitHub sign-in');
+		this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		this.dialogRef.clear();
+		await this.commandService.executeCommand('workbench.action.chat.triggerSetupAnonymousWithoutDialog');
+		await this._ensureAIFeaturesEnabled();
+		await this._maybeOpenSetupWalkthrough();
+	}
+
+	/**
+	 * Opens the Omen IDE setup walkthrough (Featherless key, optional GitHub, theme,
+	 * model, tour) exactly once, on the very first run. Guarded by its own storage
+	 * flag so relaunches don't re-open it.
+	 */
+	private async _maybeOpenSetupWalkthrough(): Promise<void> {
+		if (this.storageService.getBoolean(OMENIDE_WALKTHROUGH_SHOWN_KEY, StorageScope.APPLICATION, false)) {
+			return;
+		}
+		this.storageService.store(OMENIDE_WALKTHROUGH_SHOWN_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		try {
+			await this.commandService.executeCommand('workbench.action.openWalkthrough', OMENIDE_SETUP_WALKTHROUGH_ID);
+		} catch (err) {
+			this.logService.warn('[sessions welcome] failed to open Omen IDE setup walkthrough', err);
+		}
 	}
 
 	private async _showSignInDialog(): Promise<void> {
@@ -459,3 +507,46 @@ export class SessionsSetUpService extends Disposable implements ISessionsSetUpSe
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Reset first-run experience — lets the user replay onboarding without wiping
+// their whole profile from a terminal.
+// ---------------------------------------------------------------------------
+
+class ResetFirstRunAction extends Action2 {
+	constructor() {
+		super({
+			id: 'omenide.resetFirstRun',
+			title: localize2('omenide.resetFirstRun', "Omen IDE: Reset First-Run Experience"),
+			category: localize2('omenide.category', "Omen IDE"),
+			f1: true,
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const storageService = accessor.get(IStorageService);
+		const commandService = accessor.get(ICommandService);
+		const hostService = accessor.get(IHostService);
+		const dialogService = accessor.get(IDialogService);
+
+		const { confirmed } = await dialogService.confirm({
+			type: 'warning',
+			message: localize('omenide.resetFirstRun.confirm', "Reset the Omen IDE first-run experience?"),
+			detail: localize('omenide.resetFirstRun.detail', "This clears the welcome flag and your saved Featherless API key, then reloads the window so you can walk through setup again."),
+			primaryButton: localize('omenide.resetFirstRun.button', "Reset & Reload"),
+		});
+		if (!confirmed) {
+			return;
+		}
+
+		storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
+		storageService.remove(OMENIDE_WALKTHROUGH_SHOWN_KEY, StorageScope.APPLICATION);
+		try {
+			await commandService.executeCommand('omenide.resetFeatherlessApiKey');
+		} catch {
+			// Extension command may be unavailable if the Copilot extension is not active; ignore.
+		}
+		await hostService.reload();
+	}
+}
+registerAction2(ResetFirstRunAction);

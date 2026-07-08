@@ -17,6 +17,7 @@ import { IEndpointProvider } from '../../../platform/endpoint/common/endpointPro
 import { IAutomodeService } from '../../../platform/endpoint/node/automodeService';
 import { SEARCH_AGENT_FAMILY } from '../../../platform/endpoint/node/searchAgentChatEndpoint';
 import { IEnvService } from '../../../platform/env/common/envService';
+import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
 import { ILogService } from '../../../platform/log/common/logService';
 import { IEditLogService } from '../../../platform/multiFileEdit/common/editLogService';
 import { CUSTOM_TOOL_SEARCH_NAME, isAnthropicContextEditingEnabled } from '../../../platform/networking/common/anthropic';
@@ -160,8 +161,11 @@ export function isBackgroundTodoAgentEnabled(
 		return false;
 	}
 
-	// Only enable for a signed in no-free plan user talking to the CAPI endpoint.
-	const isEnabledForToken = token !== undefined && !token.isFreeUser && !token.isNoAuthUser && isCAPIEndpoint(endpoint);
+	// Only enable for a signed in no-free plan user talking to the CAPI endpoint,
+	// or when using Featherless BYOK (OmenIDE).
+	const isFeatherlessEndpoint = endpoint.isExtensionContributed && endpoint.modelProvider?.toLowerCase() === 'featherless';
+	const isEnabledForToken = (token !== undefined && !token.isFreeUser && !token.isNoAuthUser && isCAPIEndpoint(endpoint))
+		|| isFeatherlessEndpoint;
 	return isEnabledForToken && configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundTodoAgentEnabled, experimentationService)
 		&& !isTodoToolExplicitlyEnabled(request);
 }
@@ -212,8 +216,12 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 	const editToolLearningService = accessor.get<IEditToolLearningService>(IEditToolLearningService);
 	const authenticationService = accessor.get<IAuthenticationService>(IAuthenticationService);
 	const logService = accessor.get<ILogService>(ILogService);
+	const extensionContext = accessor.get(IVSCodeExtensionContext);
 
 	model ??= await endpointProvider.getChatEndpoint(request);
+
+	const featherlessKey = await extensionContext.secrets.get('copilot-byok-Featherless-api-key');
+	const hasFeatherless = !!featherlessKey?.trim();
 
 	const allowTools: Record<string, boolean> = {};
 
@@ -246,15 +254,17 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 	allowTools[ToolName.CoreRunTask] = tasksService.getTasks().length > 0;
 
 	// The specialized subagents and semantic search only work when the main
-	// agent is on CAPI. semantic_search relies on embeddings that require a
-	// Copilot token source, so on BYOK / custom endpoints it can abort the chat
-	// turn (e.g. when the GitHub auth provider is unavailable). Keep it off
-	// there. See https://github.com/microsoft/vscode/issues/322525.
-	if (!isCAPIEndpoint(model)) {
+	// agent is on CAPI, or when Featherless BYOK embeddings are available (OmenIDE).
+	if (!isCAPIEndpoint(model) && !hasFeatherless) {
 		allowTools[ToolName.SearchSubagent] = false;
 		allowTools[ToolName.ExploreSubagent] = false;
 		allowTools[ToolName.ExecutionSubagent] = false;
 		allowTools[ToolName.Codebase] = false;
+	} else if (!isCAPIEndpoint(model) && hasFeatherless) {
+		allowTools[ToolName.Codebase] = true;
+		allowTools[ToolName.SearchSubagent] = configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SearchSubagentToolEnabled, experimentationService);
+		allowTools[ToolName.ExploreSubagent] = configurationService.getExperimentBasedConfig(ConfigKey.ExploreAgentEnabled, experimentationService);
+		allowTools[ToolName.ExecutionSubagent] = configurationService.getExperimentBasedConfig(ConfigKey.Advanced.ExecutionSubagentToolEnabled, experimentationService);
 	} else {
 		const searchSubagentEnabled = configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SearchSubagentToolEnabled, experimentationService);
 		const exploreAgentEnabled = configurationService.getExperimentBasedConfig(ConfigKey.ExploreAgentEnabled, experimentationService);

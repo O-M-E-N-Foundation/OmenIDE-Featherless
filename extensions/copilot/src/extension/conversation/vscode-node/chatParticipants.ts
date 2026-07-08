@@ -173,11 +173,11 @@ class ChatAgents implements IDisposable {
 
 You can also ask me questions about your editor selection by [starting an inline chat session](command:inlineChat.start).
 
-Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-copilot/getting-started-with-github-copilot?tool=vscode&utm_source=editor&utm_medium=chat-panel&utm_campaign=2024q3-em-MSFT-getstarted) in [Visual Studio Code](https://code.visualstudio.com/docs/copilot/overview). Or explore the [Copilot walkthrough](command:github.copilot.open.walkthrough).`,
+Learn more about [Omen IDE](https://featherless.ai/docs/overview) powered by [Featherless.ai GLM-5.2](https://featherless.ai/models/zai-org/GLM-5.2). Configure your API key via the model picker (Featherless provider).`,
 			comment: `{Locked='](command:inlineChat.start)'}`
 		});
 		const markdownString = new vscode.MarkdownString(helpPostfix);
-		markdownString.isTrusted = { enabledCommands: ['inlineChat.start', 'github.copilot.open.walkthrough'] };
+		markdownString.isTrusted = { enabledCommands: ['inlineChat.start'] };
 		defaultAgent.helpTextPostfix = markdownString;
 
 		defaultAgent.additionalWelcomeMessage = this.additionalWelcomeMessage;

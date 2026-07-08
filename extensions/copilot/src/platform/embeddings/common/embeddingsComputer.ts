@@ -15,6 +15,7 @@ import { TelemetryCorrelationId } from '../../../util/common/telemetryCorrelatio
 export class EmbeddingType {
 	public static readonly text3small_512 = new EmbeddingType('text-embedding-3-small-512');
 	public static readonly metis_1024_I16_Binary = new EmbeddingType('metis-1024-I16-Binary');
+	public static readonly featherless_qwen3_8b = new EmbeddingType('featherless-qwen3-embedding-8b');
 
 	constructor(
 		public readonly id: string
@@ -62,6 +63,14 @@ const wellKnownEmbeddingMetadata = Object.freeze<Record<string, EmbeddingTypeInf
 		quantization: {
 			query: 'float16',
 			document: 'binary'
+		},
+	},
+	[EmbeddingType.featherless_qwen3_8b.id]: {
+		model: LEGACY_EMBEDDING_MODEL_ID.TEXT3SMALL,
+		dimensions: 4096,
+		quantization: {
+			query: 'float32',
+			document: 'float32'
 		},
 	},
 });

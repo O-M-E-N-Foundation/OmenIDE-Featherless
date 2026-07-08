@@ -7,7 +7,7 @@
 import './disableProcessReport';
 
 import { ExtensionContext } from 'vscode';
-import { resolve } from '../../../util/vs/base/common/path';
+import { dirname, join } from '../../../util/vs/base/common/path';
 import { baseActivate } from '../vscode/extension';
 import { vscodeNodeContributions } from './contributions';
 import { registerServices } from './services';
@@ -28,10 +28,35 @@ function configureDevPackages() {
 		const sourceMapSupport = require('source-map-support');
 		sourceMapSupport.install();
 		const dotenv = require('dotenv');
-		dotenv.config({ path: [resolve(__dirname, '../.env')] });
+		// Optional dev-only convenience: load a `.env` from the fork's repo root
+		// (the directory containing product.json). The root is discovered by
+		// walking up from this bundle's location, so there are no hardcoded paths
+		// to sibling folders. If no `.env` exists, dotenv is a no-op and the
+		// Featherless API key is entered through the UI instead.
+		const repoRoot = findRepoRoot(__dirname);
+		if (repoRoot) {
+			dotenv.config({ path: join(repoRoot, '.env') });
+		}
 	} catch (err) {
 		console.error(err);
 	}
+}
+
+/** Walks up from `startDir` to find the VS Code repo root (dir containing product.json). */
+function findRepoRoot(startDir: string): string | undefined {
+	const fs = require('fs');
+	let dir = startDir;
+	for (let i = 0; i < 12; i++) {
+		if (fs.existsSync(join(dir, 'product.json'))) {
+			return dir;
+		}
+		const parent = dirname(dir);
+		if (parent === dir) {
+			break;
+		}
+		dir = parent;
+	}
+	return undefined;
 }
 //#endregion
 

@@ -19,6 +19,15 @@ set NAMESHORT=%NAMESHORT: "=%
 set NAMESHORT=%NAMESHORT:"=%.exe
 set CODE=".build\electron\%NAMESHORT%"
 
+:: Dev build: the workbench dev launcher can load a staged/bundled copy of
+:: the copilot extension from .build/extensions (which can drift from the
+:: freshly compiled extensions/copilot/dist). Keep them in sync so newly
+:: added commands/providers are present in the running app.
+if exist ".build\extensions\copilot\dist\" (
+	xcopy /E /Y /I "extensions\copilot\dist\*" ".build\extensions\copilot\dist\" >nul
+	copy /Y "extensions\copilot\package.json" ".build\extensions\copilot\package.json" >nul
+)
+
 :: Manage built-in extensions
 if "%~1"=="--builtin" goto builtin
 

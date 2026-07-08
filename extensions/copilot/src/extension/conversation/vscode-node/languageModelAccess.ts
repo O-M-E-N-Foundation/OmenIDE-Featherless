@@ -552,14 +552,16 @@ export class LanguageModelAccess extends Disposable implements IExtensionContrib
 
 		const update = async () => {
 
-			if (!await this._getToken()) {
+			const featherlessKey = await this._extensionContext.secrets.get('copilot-byok-Featherless-api-key');
+			const hasFeatherless = !!featherlessKey?.trim();
+			if (!await this._getToken() && !hasFeatherless) {
 				dispo.clear();
 				return;
 			}
 
 			const embeddingsComputer = this._embeddingsComputer;
-			const embeddingType = EmbeddingType.text3small_512;
-			const model = getWellKnownEmbeddingTypeInfo(embeddingType)?.model;
+			const embeddingType = hasFeatherless ? EmbeddingType.featherless_qwen3_8b : EmbeddingType.text3small_512;
+			const model = getWellKnownEmbeddingTypeInfo(embeddingType)?.model ?? embeddingType.id;
 			if (!model) {
 				throw new Error(`No model found for embedding type ${embeddingType.id}`);
 			}

@@ -1,0 +1,24 @@
+{
+  "name": "theme-omen-dark",
+  "displayName": "Omen Dark Theme",
+  "description": "Default Omen IDE dark theme with green accents",
+  "version": "1.0.0",
+  "publisher": "omenide",
+  "license": "MIT",
+  "engines": {
+    "vscode": "*"
+  },
+  "categories": [
+    "Themes"
+  ],
+  "contributes": {
+    "themes": [
+      {
+        "id": "Omen Dark",
+        "label": "Omen Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/omen-dark.json"
+      }
+    ]
+  }
+}

@@ -28,6 +28,7 @@ import { INaiveChunkingService, NaiveChunkingService } from '../../../platform/c
 import { IDevContainerConfigurationService } from '../../../platform/devcontainer/common/devContainerConfigurationService';
 import { IDiffService } from '../../../platform/diff/common/diffService';
 import { DiffServiceImpl } from '../../../platform/diff/node/diffServiceImpl';
+import { IEmbeddingsComputer } from '../../../platform/embeddings/common/embeddingsComputer';
 import { ICAPIClientService } from '../../../platform/endpoint/common/capiClient';
 import { IDomainService } from '../../../platform/endpoint/common/domainService';
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
@@ -150,6 +151,8 @@ import { registerServices as registerCommonServices } from '../vscode/services';
 import { PromptsServiceImpl } from '../../../platform/promptFiles/vscode-node/promptsServiceImpl';
 import { IPromptsService } from '../../../platform/promptFiles/common/promptsService';
 import { AutomaticInstructionsCollector, IAutomaticInstructionsCollector } from '../../../platform/promptFiles/node/automaticInstructionsCollector';
+import { BYOKStorageService, IBYOKStorageService } from '../../byok/vscode-node/byokStorageService';
+import { OmenIDEEmbeddingsComputer } from '../../omenide/node/omenideEmbeddingsComputer';
 
 // ###########################################################################################
 // ###                                                                                     ###
@@ -163,6 +166,9 @@ export function registerServices(builder: IInstantiationServiceBuilder, extensio
 	const isTestMode = extensionContext.extensionMode === ExtensionMode.Test;
 
 	registerCommonServices(builder, extensionContext);
+
+	builder.define(IBYOKStorageService, new SyncDescriptor(BYOKStorageService));
+	builder.define(IEmbeddingsComputer, new SyncDescriptor(OmenIDEEmbeddingsComputer));
 
 	builder.define(IAutomodeService, new SyncDescriptor(AutomodeService));
 	builder.define(IConversationStore, new SyncDescriptor(ConversationStore));

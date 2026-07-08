@@ -49,6 +49,11 @@ import { ILanguageModelsProviderGroup, ILanguageModelsConfigurationService } fro
 export const COPILOT_VENDOR_ID = 'copilot';
 
 /**
+ * Default BYOK vendor for OmenIDE. Featherless GLM-5.2 is the primary model provider.
+ */
+export const OMENIDE_DEFAULT_VENDOR_ID = 'featherless';
+
+/**
  * Vendor ids of the BYOK language-model providers that ship in-built with the GitHub Copilot Chat
  * extension. Each provider's vendor id is `providerName.toLowerCase()` (see
  * `extensions/copilot/src/extension/byok/vscode-node/*Provider.ts`). This list is intentionally
@@ -65,6 +70,7 @@ const BUILT_IN_BYOK_VENDOR_IDS = new Set<string>([
 	'xai',
 	'customoai',
 	'customendpoint',
+	'featherless',
 ]);
 
 /**
@@ -973,7 +979,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 				managementCommand: item.managementCommand,
 				deprecation: item.deprecation,
 				when: item.when,
-				isDefault: item.vendor === COPILOT_VENDOR_ID
+				isDefault: item.vendor === OMENIDE_DEFAULT_VENDOR_ID
 			};
 			this._vendors.set(item.vendor, vendor);
 			addedVendorIds.push(item.vendor);

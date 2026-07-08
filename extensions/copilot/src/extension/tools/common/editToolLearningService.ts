@@ -105,6 +105,10 @@ export class EditToolLearningService implements IEditToolLearningService {
 			return [ToolName.ReplaceString, ToolName.MultiReplaceString];
 		}
 
+		if (lowerFamily.includes('featherless') || lowerFamily.includes('glm-5.2') || lowerFamily.includes('zai-org')) {
+			return [ToolName.ReplaceString, ToolName.ApplyPatch];
+		}
+
 		return undefined;
 	}
 

@@ -3,7 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
+import { createDecorator } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { BYOKAuthType, BYOKModelCapabilities } from '../../byok/common/byokProvider';
+
+export const IBYOKStorageService = createDecorator<IBYOKStorageService>('IBYOKStorageService');
 
 export interface StoredModelConfig {
 	deploymentUrl?: string;
@@ -13,6 +16,8 @@ export interface StoredModelConfig {
 }
 
 export interface IBYOKStorageService {
+	readonly _serviceBrand: undefined;
+
 	/**
 	 * Get API key for a provider or model
 	 */
@@ -56,9 +61,11 @@ export interface IBYOKStorageService {
 }
 
 export class BYOKStorageService implements IBYOKStorageService {
+	declare readonly _serviceBrand: undefined;
+
 	private readonly _extensionContext: IVSCodeExtensionContext;
 
-	constructor(extensionContext: IVSCodeExtensionContext) {
+	constructor(@IVSCodeExtensionContext extensionContext: IVSCodeExtensionContext) {
 		this._extensionContext = extensionContext;
 	}
 

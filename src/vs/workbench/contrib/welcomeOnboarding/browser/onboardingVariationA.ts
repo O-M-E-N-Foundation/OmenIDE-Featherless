@@ -15,7 +15,7 @@ import { FileAccess } from '../../../../base/common/network.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
-import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
+import { InputBox, MessageType } from '../../../../base/browser/ui/inputbox/inputBox.js';
 import { localize } from '../../../../nls.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
@@ -35,6 +35,9 @@ import { ITelemetryService } from '../../../../platform/telemetry/common/telemet
 import { InstallChatEvent, InstallChatClassification, ChatSetupStrategy } from '../../chat/browser/chatSetup/chatSetup.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
+import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
+import { IExtensionService } from '../../../services/extensions/common/extensions.js';
+import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
 import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
@@ -79,6 +82,15 @@ type EnterpriseSignInUiState = 'options' | 'instance' | 'progress';
 
 assertDefined(product.defaultChatAgent, 'Onboarding requires a default chat agent product configuration.');
 const defaultChat = product.defaultChatAgent;
+
+/** Extension id for the in-tree Copilot/Featherless extension (`extensions/copilot`). */
+const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier('GitHub.copilot-chat');
+/** Secret key used by BYOKStorageService for the Featherless provider API key. */
+const FEATHERLESS_API_KEY_SECRET = 'copilot-byok-Featherless-api-key';
+
+function getExtensionSecretStorageKey(extensionId: string, key: string): string {
+	return JSON.stringify({ extensionId, key });
+}
 
 /**
  * Variation A — Classic Wizard Modal
@@ -133,6 +145,9 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private enterpriseSignInUiState: EnterpriseSignInUiState = 'options';
 	private enterpriseInstanceValue = '';
 	private enterpriseSignInWatch: StopWatch | undefined;
+	private featherlessApiKeyValue = '';
+	private featherlessApiKeyConfigured = false;
+	private featherlessApiKeyInputBox: InputBox | undefined;
 
 	constructor(
 		@ILayoutService private readonly layoutService: ILayoutService,
@@ -147,6 +162,8 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
+		@ISecretStorageService private readonly secretStorageService: ISecretStorageService,
+		@IExtensionService private readonly extensionService: IExtensionService,
 	) {
 		super();
 
@@ -180,7 +197,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		this.overlay = append(container, $('.onboarding-a-overlay'));
 		this.overlay.setAttribute('role', 'dialog');
 		this.overlay.setAttribute('aria-modal', 'true');
-		this.overlay.setAttribute('aria-label', localize('onboarding.a.aria', "Welcome to Visual Studio Code"));
+		this.overlay.setAttribute('aria-label', localize('onboarding.a.aria', "Welcome to Omen IDE"));
 
 		// Card
 		this.card = append(this.overlay, $('.onboarding-a-card'));
@@ -228,34 +245,15 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			this._dismiss('skip');
 		}));
 		this.disposables.add(addDisposableListener(this.backButton, EventType.CLICK, () => {
-			if (this.currentStepIndex === 0 && this.enterpriseSignInUiState === 'instance') {
-				this._logAction('cancelEnterpriseInstancePrompt');
-				this.enterpriseSignInWatch = undefined;
-				this._setEnterpriseSignInUiState('options');
-				return;
-			}
-
 			this._logAction('back');
 			this._prevStep();
 		}));
 		this.disposables.add(addDisposableListener(this.nextButton, EventType.CLICK, () => {
-			if (this._isLastStep()) {
-				this._logAction('complete');
-				this._dismiss('complete');
-			} else if (this.currentStepIndex === 0) {
-				this._logAction('continueWithoutSignIn');
-				this._nextStep();
-			} else {
-				this._logAction('next');
-				this._nextStep();
-			}
+			void this._handleNextClick();
 		}));
 
-		this.disposables.add(addDisposableListener(this.overlay, EventType.MOUSE_DOWN, (e: MouseEvent) => {
-			if (e.target === this.overlay) {
-				this._dismiss('skip');
-			}
-		}));
+		// Intentionally modal: clicking the backdrop must NOT dismiss the wizard.
+		// Only the close button or an explicit step action may change state.
 
 		this.disposables.add(addDisposableListener(this.overlay, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			const event = new StandardKeyboardEvent(e);
@@ -282,6 +280,112 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		});
 
 		this._focusCurrentStepElement();
+	}
+
+	private async _handleNextClick(): Promise<void> {
+		if (!(await this._tryAdvanceFromCurrentStep())) {
+			return;
+		}
+
+		if (this._isLastStep()) {
+			this._logAction('complete');
+			this._dismiss('complete');
+		} else {
+			this._logAction('next');
+			this._nextStep();
+		}
+	}
+
+	private async _tryAdvanceFromCurrentStep(): Promise<boolean> {
+		const stepId = this.steps[this.currentStepIndex];
+		if (stepId === OnboardingStepId.FeatherlessApiKey) {
+			return this._saveFeatherlessApiKeyFromWizard();
+		}
+		return true;
+	}
+
+	private async _saveFeatherlessApiKeyFromWizard(): Promise<boolean> {
+		if (this.featherlessApiKeyConfigured) {
+			return true;
+		}
+
+		const key = this.featherlessApiKeyValue.trim();
+		if (!key) {
+			this.featherlessApiKeyInputBox?.showMessage({
+				type: MessageType.ERROR,
+				content: localize('onboarding.featherlessApiKey.required', "Enter your Featherless.ai API key to continue."),
+			});
+			return false;
+		}
+
+		if (this.nextButton) {
+			this.nextButton.disabled = true;
+			this.nextButton.textContent = localize('onboarding.featherlessApiKey.saving', "Saving…");
+		}
+
+		try {
+			// Write directly to the same secret-storage slot the Copilot BYOK layer
+			// uses. The onboarding wizard opens before the extension has activated
+			// (activation is onStartupFinished), so extension commands are not
+			// available yet — but secret storage is always reachable from the workbench.
+			await this.secretStorageService.set(
+				getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_API_KEY_SECRET),
+				key,
+			);
+			this.featherlessApiKeyConfigured = true;
+			this.featherlessApiKeyInputBox?.hideMessage();
+
+			// Best-effort: wake the extension so it registers the Featherless provider.
+			void this._activateFeatherlessExtension(key);
+			return true;
+		} catch (err) {
+			if (this.nextButton) {
+				this.nextButton.disabled = false;
+			}
+			this._updateButtonStates();
+
+			const detail = err instanceof Error ? err.message : String(err);
+			this.notificationService.notify({
+				severity: Severity.Error,
+				message: localize('onboarding.featherlessApiKey.saveFailed', "Could not save your Featherless API key ({0}). You can also set it later from the Command Palette: \"Omen IDE: Configure Featherless API Key\".", detail),
+			});
+			return false;
+		}
+	}
+
+	private async _activateFeatherlessExtension(key: string): Promise<void> {
+		try {
+			await this.extensionService.activateById(COPILOT_CHAT_EXTENSION_ID, {
+				activationEvent: 'onStartupFinished',
+				extensionId: COPILOT_CHAT_EXTENSION_ID,
+				startup: false,
+			});
+		} catch {
+			return;
+		}
+		try {
+			await this.commandService.executeCommand('omenide.setFeatherlessApiKey', key);
+		} catch {
+			// Key is already in secret storage; provider registration can happen later.
+		}
+	}
+
+	private async _readFeatherlessApiKeyFromStorage(): Promise<string | undefined> {
+		const value = await this.secretStorageService.get(
+			getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_API_KEY_SECRET),
+		);
+		return value?.trim() || undefined;
+	}
+
+	private async _refreshFeatherlessApiKeyState(): Promise<void> {
+		const wasConfigured = this.featherlessApiKeyConfigured;
+		this.featherlessApiKeyConfigured = !!(await this._readFeatherlessApiKeyFromStorage());
+
+		if (!wasConfigured && this.featherlessApiKeyConfigured && this.steps[this.currentStepIndex] === OnboardingStepId.FeatherlessApiKey) {
+			this._renderStep();
+			return;
+		}
+		this._updateButtonStates();
 	}
 
 	private _dismiss(reason: 'complete' | 'skip'): void {
@@ -380,7 +484,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		this.stepFocusableElements.length = 0;
 
 		const stepId = this.steps[this.currentStepIndex];
-		const useSignInHero = stepId === OnboardingStepId.SignIn;
+		const useSignInHero = stepId === OnboardingStepId.SignIn || stepId === OnboardingStepId.FeatherlessApiKey;
 		this.titleEl.style.display = useSignInHero ? 'none' : '';
 		this.subtitleEl.style.display = useSignInHero ? 'none' : '';
 		this.titleEl.textContent = getOnboardingStepTitle(stepId);
@@ -395,6 +499,9 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		clearNode(this.contentEl);
 
 		switch (stepId) {
+			case OnboardingStepId.FeatherlessApiKey:
+				this._renderFeatherlessApiKeyStep(this.contentEl);
+				break;
 			case OnboardingStepId.SignIn:
 				this._renderSignInStep(this.contentEl);
 				break;
@@ -420,49 +527,84 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 	private _updateButtonStates(): void {
 		if (this.backButton) {
-			const showEnterpriseBack = this.currentStepIndex === 0 && this.enterpriseSignInUiState === 'instance';
-			this.backButton.style.display = (this.currentStepIndex === 0 && !showEnterpriseBack) ? 'none' : '';
+			this.backButton.style.display = this.currentStepIndex === 0 ? 'none' : '';
 		}
 		if (this.nextButton) {
-			if (this.currentStepIndex === 0) {
-				if (this._userSignedIn) {
-					this.nextButton.className = 'onboarding-a-btn onboarding-a-btn-primary';
-					this.nextButton.textContent = localize('onboarding.continue', "Continue");
-				} else {
-					// Sign-in step: secondary "Continue without Signing In"
-					this.nextButton.className = 'onboarding-a-btn onboarding-a-btn-secondary';
-					this.nextButton.textContent = localize('onboarding.continueWithoutSignIn', "Continue without Signing In");
-				}
-			} else if (this._isLastStep()) {
-				this.nextButton.className = 'onboarding-a-btn onboarding-a-btn-primary';
-				this.nextButton.textContent = localize('onboarding.getStarted', "Get Started");
-			} else {
-				this.nextButton.className = 'onboarding-a-btn onboarding-a-btn-primary';
-				this.nextButton.textContent = localize('onboarding.next', "Continue");
-			}
+			this.nextButton.className = 'onboarding-a-btn onboarding-a-btn-primary';
+			this.nextButton.textContent = this._isLastStep()
+				? localize('onboarding.getStarted', "Get Started")
+				: localize('onboarding.next', "Continue");
+			// Always clickable; the Featherless step validates emptiness in its
+			// handler and shows an inline message so the button is never a dead end.
+			this.nextButton.disabled = false;
+			this.nextButton.style.opacity = '';
 		}
-		if (this.footerLeft) {
-			if (this._isLastStep()) {
-				// Show sign-in nudge in footer
-				if (!this._footerSignInBtn && !this._userSignedIn) {
-					this._footerSignInBtn = append(this.footerLeft, $<HTMLButtonElement>('button.onboarding-a-signin-nudge-btn'));
-					this._footerSignInBtn.type = 'button';
-					this._footerSignInBtn.textContent = localize('onboarding.sessions.signInNudge', "Sign in to use GitHub Copilot");
-					this.stepDisposables.add(addDisposableListener(this._footerSignInBtn, EventType.CLICK, async () => {
-						this._logAction('signInNudge');
-						await this._handleSignIn();
-						if (this._userSignedIn && this._footerSignInBtn) {
-							this._footerSignInBtn.style.display = 'none';
-						}
-					}));
-				}
-			} else {
-				if (this._footerSignInBtn) {
-					this._footerSignInBtn.remove();
-					this._footerSignInBtn = undefined;
-				}
-			}
+		// GitHub Copilot sign-in nudge intentionally omitted — Omen IDE uses Featherless.ai.
+		if (this.footerLeft && this._footerSignInBtn) {
+			this._footerSignInBtn.remove();
+			this._footerSignInBtn = undefined;
 		}
+	}
+
+	// =====================================================================
+	// Step: Featherless API Key
+	// =====================================================================
+
+	private _renderFeatherlessApiKeyStep(container: HTMLElement): void {
+		const wrapper = append(container, $('.onboarding-a-signin'));
+		const brand = append(wrapper, $('.onboarding-a-signin-brand'));
+		const brandIcon = append(brand, $('span.onboarding-a-signin-brand-icon'));
+		brandIcon.setAttribute('role', 'img');
+		brandIcon.setAttribute('aria-label', product.nameLong);
+
+		const content = append(wrapper, $('.onboarding-a-signin-content'));
+		const contentMain = append(content, $('.onboarding-a-signin-content-main'));
+		const title = append(contentMain, $('h2.onboarding-a-signin-title'));
+		title.textContent = localize('onboarding.featherlessApiKey.heroTitle', "Welcome to Omen IDE");
+
+		const subtitle = append(contentMain, $('p.onboarding-a-signin-subtitle'));
+		subtitle.textContent = localize('onboarding.featherlessApiKey.heroSubtitle', "Omen IDE runs on Featherless.ai. Paste your API key to enable chat, agents, and Tab autocomplete.");
+
+		const actions = append(contentMain, $('.onboarding-a-signin-actions'));
+
+		if (this.featherlessApiKeyConfigured) {
+			const saved = append(actions, $('.onboarding-a-signin-confirmation'));
+			const icon = append(saved, $('span'));
+			icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.check));
+			icon.setAttribute('aria-hidden', 'true');
+			const text = append(saved, $('span'));
+			text.textContent = localize('onboarding.featherlessApiKey.saved', "API key saved. You can continue to the next step.");
+		} else {
+			const inputContainer = append(actions, $('.onboarding-a-signin-ghe-input'));
+			const inputBox = this.stepDisposables.add(new InputBox(inputContainer, undefined, {
+				placeholder: localize('onboarding.featherlessApiKey.placeholder', 'Paste your Featherless.ai API key'),
+				ariaLabel: localize('onboarding.featherlessApiKey.inputAria', "Featherless API key"),
+				type: 'password',
+				inputBoxStyles: defaultInputBoxStyles,
+			}));
+			this.featherlessApiKeyInputBox = inputBox;
+			inputBox.value = this.featherlessApiKeyValue;
+			const input = this._registerStepFocusable(inputBox.inputElement);
+			this.stepDisposables.add(inputBox.onDidChange(value => {
+				this.featherlessApiKeyValue = value;
+				inputBox.hideMessage();
+				this._updateButtonStates();
+			}));
+			this.stepDisposables.add(addDisposableListener(input, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				if (e.key === 'Enter' && this.featherlessApiKeyValue.trim()) {
+					e.preventDefault();
+					void this._handleNextClick();
+				}
+			}));
+		}
+
+		const footer = append(wrapper, $('.onboarding-a-signin-footer'));
+		const disclaimerCol = append(footer, $('.onboarding-a-signin-disclaimer-col'));
+		const disclaimer = append(disclaimerCol, $('.onboarding-a-signin-disclaimer'));
+		disclaimer.append(localize('onboarding.featherlessApiKey.getKeyPrefix', "Don't have a key yet? "));
+		this._createInlineLink(disclaimer, localize('onboarding.featherlessApiKey.getKey', "Get one from Featherless.ai"), 'https://featherless.ai/account/api-keys');
+
+		void this._refreshFeatherlessApiKeyState();
 	}
 
 	// =====================================================================
@@ -479,7 +621,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		const content = append(wrapper, $('.onboarding-a-signin-content'));
 		const contentMain = append(content, $('.onboarding-a-signin-content-main'));
 		const title = append(contentMain, $('h2.onboarding-a-signin-title'));
-		title.textContent = localize('onboarding.signIn.heroTitle', "Welcome to VS Code");
+		title.textContent = localize('onboarding.signIn.heroTitle', "Welcome to Omen IDE");
 
 		const subtitle = append(contentMain, $('p.onboarding-a-signin-subtitle'));
 		subtitle.textContent = localize('onboarding.signIn.heroSubtitle', "Sign in to use GitHub Copilot.");
@@ -899,7 +1041,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			this._createKbd(localize('onboarding.personalize.tip.shift', "Shift")),
 			'+',
 			this._createKbd(localize('onboarding.personalize.tip.p', "P")),
-			localize('onboarding.personalize.tip.suffix', " to access all VS Code commands."),
+			localize('onboarding.personalize.tip.suffix', " to access all Omen IDE commands."),
 		);
 	}
 
