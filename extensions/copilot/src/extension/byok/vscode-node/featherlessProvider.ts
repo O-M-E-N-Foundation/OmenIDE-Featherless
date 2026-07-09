@@ -2,6 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
+import { CancellationToken, PrepareLanguageModelChatModelOptions } from 'vscode';
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { ILogService } from '../../../platform/log/common/logService';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
@@ -63,6 +64,36 @@ export class FeatherlessBYOKLMProvider extends AbstractOpenAICompatibleLMProvide
 
 	protected getModelsBaseUrl(): string {
 		return OmenIDEDefaults.featherlessBaseUrl;
+	}
+
+	/**
+	 * Omen IDE keeps the Featherless key in secret storage as the source of
+	 * truth (onboarding + `omenide.hasFeatherlessApiKey` read it, and the
+	 * request path falls back to it), so unlike upstream this neither migrates
+	 * the key into the provider group nor deletes it. Running the upstream
+	 * migration here is harmful: the group already exists (created keyless at
+	 * startup), so the migrate command conflicts and rejecting here would drop
+	 * all Featherless models from the picker.
+	 */
+	protected override async configureDefaultGroupWithApiKeyOnly(): Promise<string | undefined> {
+		return this._byokStorageService.getAPIKey(FeatherlessBYOKLMProvider.providerName);
+	}
+
+	/**
+	 * The workbench resolves models twice for vendors with a configuration
+	 * schema: once grouplessly (`configuration === undefined`) and once for the
+	 * "Featherless" provider group created at activation. Because this provider
+	 * falls back to the secret-storage key, both passes would return the full
+	 * catalog under different identifiers, registering every model twice — the
+	 * duplicates then flow through the agent-host BYOK bridge and spam
+	 * "[LM] Model … is already registered. Skipping." warnings. Serve models
+	 * exclusively through the group pass; the groupless probe returns nothing.
+	 */
+	override async provideLanguageModelChatInformation(options: PrepareLanguageModelChatModelOptions, token: CancellationToken): Promise<OpenAICompatibleLanguageModelChatInformation<import('./abstractLanguageModelChatProvider').LanguageModelChatConfiguration>[]> {
+		if (!options.configuration) {
+			return [];
+		}
+		return super.provideLanguageModelChatInformation(options, token);
 	}
 
 	protected override resolveModelCapabilities(modelData: unknown): BYOKModelCapabilities | undefined {

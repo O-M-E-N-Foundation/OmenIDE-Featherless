@@ -34,6 +34,7 @@ import { Delayer } from '../../../../base/common/async.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { ChatEntitlementService, IChatEntitlementService } from '../../chat/common/chatEntitlementService.js';
+import { usesFeatherlessOnlyProvider } from '../../chat/common/featherless.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 
 const SOURCE = 'IWorkbenchExtensionEnablementService';
@@ -87,7 +88,7 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly logService: ILogService,
-		@IProductService productService: IProductService
+		@IProductService private readonly productService: IProductService
 	) {
 		super();
 		this.storageManager = this._register(new StorageManager(storageService));
@@ -176,6 +177,12 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 						this.configurationService.updateValue('chat.disableAIFeatures', true)
 							.catch(err => this.logService.error('Failed to update chat.disableAIFeatures setting during builtin chat extension enablement migration', err));
 					}
+				}
+			} else if (usesFeatherlessOnlyProvider(this.productService)) {
+				// Omen IDE: the in-tree chat extension must stay enabled for Featherless BYOK.
+				if (this._isDisabledGlobally({ id: this._chatExtensionId })) {
+					this.logService.info('[extension enablement] Re-enabling Omen IDE chat extension for Featherless-only mode');
+					void this._enableExtension({ id: this._chatExtensionId });
 				}
 			} else {
 				try {
@@ -660,6 +667,11 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 	}
 
 	private _isDisabledByUnification(identifier: IExtensionIdentifier): boolean {
+		if (this._completionsExtensionId === this._chatExtensionId) {
+			// Omen IDE: completions and chat are served by the same in-tree extension,
+			// so unification must not disable it.
+			return false;
+		}
 		return this._extensionUnificationEnabled && identifier.id.toLowerCase() === this._completionsExtensionId;
 	}
 

@@ -17,8 +17,8 @@ import { COPILOT_VENDOR_ID } from '../common/languageModels.js';
 import { ILanguageModelsConfigurationService } from '../common/languageModelsConfiguration.js';
 
 /**
- * Owns the `github.copilot.hasByokModels` context key. The key is true iff:
- *  - `github.copilot.clientByokEnabled` is true (set by `ChatEntitlementService` + Copilot extension),
+ * Owns the `omenide.hasByokModels` context key. The key is true iff:
+ *  - `omenide.clientByokEnabled` is true (set by `ChatEntitlementService` + Omen IDE extension),
  *  - `chat.aiDisabled` is off, and
  *  - the language-models configuration has at least one non-Copilot vendor group (at any time),
  *    or — pre extension scan — the `chatNonCopilotModelsAreUserSelectable` signal is on.

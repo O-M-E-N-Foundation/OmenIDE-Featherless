@@ -46,6 +46,13 @@ const baseNodeBuildOptions = {
 	],
 	platform: 'node',
 	mainFields: ['module', 'main'], // needed for jsonc-parser,
+	// `whatwg-url` (via node-fetch -> gaxios -> google-auth-library) requires the
+	// deprecated Node builtin `punycode`, which logs a DeprecationWarning at
+	// extension-host startup. The trailing slash resolves to the userland
+	// `punycode` npm package instead of the builtin.
+	alias: {
+		'punycode': 'punycode/'
+	},
 	define: {
 		'process.env.APPLICATIONINSIGHTS_CONFIGURATION_CONTENT': JSON.stringify(JSON.stringify({
 			proxyHttpUrl: '',

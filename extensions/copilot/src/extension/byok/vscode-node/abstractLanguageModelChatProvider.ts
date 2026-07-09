@@ -23,6 +23,8 @@ export interface LanguageModelChatConfiguration {
 
 export interface ExtendedLanguageModelChatInformation<C extends LanguageModelChatConfiguration> extends LanguageModelChatInformation {
 	readonly configuration?: C;
+	/** API key resolved at model-list time (e.g. from secret storage) when the provider group configuration has none. */
+	readonly apiKey?: string;
 }
 
 export abstract class AbstractLanguageModelChatProvider<C extends LanguageModelChatConfiguration = LanguageModelChatConfiguration, T extends ExtendedLanguageModelChatInformation<C> = ExtendedLanguageModelChatInformation<C>> implements LanguageModelChatProvider<T> {
@@ -173,7 +175,14 @@ export abstract class AbstractOpenAICompatibleLMProvider<T extends LanguageModel
 		const url = modelInfo.supported_endpoints?.includes(ModelSupportedEndpoint.Responses) ?
 			`${model.url}/responses` :
 			`${model.url}/chat/completions`;
-		return this._instantiationService.createInstance(OpenAIEndpoint, modelInfo, model.configuration?.apiKey ?? '', url);
+		// The provider group configuration may not carry the key (e.g. the group
+		// was scaffolded keyless before the user entered one). Fall back to the
+		// key resolved at model-list time, then to secret storage.
+		const apiKey = model.configuration?.apiKey
+			?? model.apiKey
+			?? await this._byokStorageService.getAPIKey(this._name)
+			?? '';
+		return this._instantiationService.createInstance(OpenAIEndpoint, modelInfo, apiKey, url);
 	}
 
 	protected getModelInfo(modelId: string, modelUrl: string): IChatModelInformation {

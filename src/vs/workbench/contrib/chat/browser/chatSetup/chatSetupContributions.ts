@@ -57,6 +57,8 @@ import { ChatViewContainerId, IChatWidget, IChatWidgetService } from '../chat.js
 import { ChatInputNotificationSeverity, IChatInputNotificationService } from '../widget/input/chatInputNotificationService.js';
 import { chatViewsWelcomeRegistry } from '../viewsWelcome/chatViewsWelcome.js';
 import { buildUpgradeUrlWithRedirect, ChatSetupAnonymous, ChatSetupStrategy, refreshTokens } from './chatSetup.js';
+import { ensureFeatherlessChatExtensionReady } from '../../common/featherlessSetup.js';
+import { FEATHERLESS_CONFIGURE_API_KEY_COMMAND, FEATHERLESS_EXTENSION_CONFIGURE_KEY_COMMAND } from '../../../../services/chat/common/featherless.js';
 import { ChatSetupController } from './chatSetupController.js';
 import { GrowthSessionController, registerGrowthSession } from './chatSetupGrowthSession.js';
 import { AICodeActionsHelper, AINewSymbolNamesProvider, ChatCodeActionsProvider, SetupAgent } from './chatSetupProviders.js';
@@ -326,7 +328,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 			constructor() {
 				super({
 					id: 'workbench.action.chat.triggerSetupForceSignIn',
-					title: localize2('forceSignIn', "Sign in to use GitHub Copilot")
+					title: localize2('forceSignIn', "Enter Featherless API key")
 				});
 			}
 
@@ -336,7 +338,40 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 
 				telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', { id: CHAT_SETUP_ACTION_ID, from: 'api' });
 
-				return commandService.executeCommand(CHAT_SETUP_ACTION_ID, undefined, { forceSignInDialog: true });
+				return commandService.executeCommand(FEATHERLESS_CONFIGURE_API_KEY_COMMAND);
+			}
+		}
+
+		class ConfigureFeatherlessApiKeyAction extends Action2 {
+
+			constructor() {
+				super({
+					id: FEATHERLESS_CONFIGURE_API_KEY_COMMAND,
+					title: localize2('configureFeatherlessApiKey', "Configure Featherless API Key"),
+				});
+			}
+
+			override async run(accessor: ServicesAccessor): Promise<void> {
+				const commandService = accessor.get(ICommandService);
+				const extensionsWorkbenchService = accessor.get(IExtensionsWorkbenchService);
+				const extensionService = accessor.get(IExtensionService);
+				const chatEntitlementService = accessor.get(IChatEntitlementService);
+				const productService = accessor.get(IProductService);
+				const logService = accessor.get(ILogService);
+
+				await ensureFeatherlessChatExtensionReady(
+					extensionsWorkbenchService,
+					extensionService,
+					chatEntitlementService,
+					productService,
+					logService,
+				);
+
+				try {
+					await commandService.executeCommand(FEATHERLESS_EXTENSION_CONFIGURE_KEY_COMMAND);
+				} catch (err) {
+					logService.warn(`[featherless setup] configure API key failed: ${err instanceof Error ? err.message : String(err)}`);
+				}
 			}
 		}
 
@@ -364,7 +399,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 			constructor() {
 				super({
 					id: 'workbench.action.chat.triggerSetupFromAccounts',
-					title: localize2('triggerChatSetupFromAccounts', "Sign in to use GitHub Copilot..."),
+					title: localize2('triggerChatSetupFromAccounts', "Enter Featherless API key..."),
 					menu: {
 						id: MenuId.AccountsContext,
 						group: '2_copilot',
@@ -385,7 +420,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 
 				telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', { id: CHAT_SETUP_ACTION_ID, from: 'accounts' });
 
-				return commandService.executeCommand(CHAT_SETUP_ACTION_ID);
+				return commandService.executeCommand(FEATHERLESS_CONFIGURE_API_KEY_COMMAND);
 			}
 		}
 
@@ -430,8 +465,8 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 			constructor() {
 				super(
 					ChatConfiguration.TitleBarSignInEnabled,
-					localize('toggle.chatSignIn', 'Copilot Sign In'),
-					localize('toggle.chatSignInDescription', "Toggle visibility of the Copilot Sign In button in title bar"),
+					localize('toggle.chatSignIn', 'Featherless API key'),
+					localize('toggle.chatSignInDescription', "Toggle visibility of the Featherless API key button in title bar"),
 					3,
 					ContextKeyExpr.and(
 						IsWebContext.negate(),
@@ -561,6 +596,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 		registerAction2(ChatSetupSignInTitleBarAction);
 		registerAction2(ToggleSignInTitleBarAction);
 		registerAction2(ChatSetupTriggerAnonymousWithoutDialogAction);
+		registerAction2(ConfigureFeatherlessApiKeyAction);
 		registerAction2(ChatSetupTriggerSupportAnonymousAction);
 		registerAction2(UpgradePlanAction);
 		registerAction2(ManageAdditionalSpendAction);

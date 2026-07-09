@@ -68,9 +68,9 @@ export namespace ChatEntitlementContextKeys {
 
 	export const chatAnonymous = new RawContextKey<boolean>('chatAnonymous', false, true);
 
-	export const clientByokEnabled = new RawContextKey<boolean>('github.copilot.clientByokEnabled', true, true);
+	export const clientByokEnabled = new RawContextKey<boolean>('omenide.clientByokEnabled', true, true);
 
-	export const hasByokModels = new RawContextKey<boolean>('github.copilot.hasByokModels', false, true);
+	export const hasByokModels = new RawContextKey<boolean>('omenide.hasByokModels', false, true);
 }
 
 export const IChatEntitlementService = createDecorator<IChatEntitlementService>('chatEntitlementService');
@@ -179,8 +179,8 @@ export interface IChatSetupRequirement {
 /**
  * Single source of truth for whether Chat still requires setup before it can
  * service a request. Shared by the setup agent (which routes a sent message
- * through setup) and the model picker (which surfaces a "Sign in to use Copilot"
- * state instead of a misleading lone "Auto"). BYOK models and anonymous access
+ * through setup) and the model picker (which surfaces an API-key prompt state
+ * instead of a misleading lone "Auto"). BYOK models and anonymous access
  * intentionally satisfy the entitlement-based checks so those flows keep working.
  */
 export function chatRequiresSetup(context: IChatSetupRequirement): boolean {
@@ -513,11 +513,11 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 	}
 
 	get clientByokEnabled(): boolean {
-		return this.contextKeyService.getContextKeyValue<boolean>('github.copilot.clientByokEnabled') === true;
+		return this.contextKeyService.getContextKeyValue<boolean>('omenide.clientByokEnabled') === true;
 	}
 
 	get hasByokModels(): boolean {
-		return this.contextKeyService.getContextKeyValue<boolean>('github.copilot.hasByokModels') === true;
+		return this.contextKeyService.getContextKeyValue<boolean>('omenide.hasByokModels') === true;
 	}
 
 	//#endregion

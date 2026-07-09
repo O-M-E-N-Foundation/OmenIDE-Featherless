@@ -116,20 +116,34 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 		}
 
 		this._featherlessGroupEnsured = true;
-		try {
-			await commands.executeCommand('lm.addLanguageModelsProviderGroup', {
-				name: FeatherlessBYOKLMProvider.providerName,
-				vendor: FeatherlessBYOKLMProvider.providerId,
-				// Minimal settings scaffold: group existence is what the model-picker
-				// gate cares about. The actual API key is handled separately.
-				settings: {
-					[OmenIDEDefaults.chatModel]: {},
-				},
-			});
-			this._logService.info('BYOK: ensured Featherless language-model provider group (keyless warm UI)');
-		} catch (err) {
-			// Expected when the group already exists (or if config isn't ready yet).
-			this._logService.debug(`BYOK: featherless provider group ensure skipped: ${err instanceof Error ? err.message : String(err)}`);
+		// The group is the sole source of Featherless models (the groupless
+		// resolution pass intentionally returns none — see FeatherlessBYOKLMProvider),
+		// so retry transient failures (e.g. the config service not being ready yet)
+		// instead of leaving the model picker permanently empty.
+		for (let attempt = 0; attempt < 3; attempt++) {
+			if (attempt > 0) {
+				await new Promise<void>(resolve => setTimeout(resolve, 2000 * attempt));
+			}
+			try {
+				await commands.executeCommand('lm.addLanguageModelsProviderGroup', {
+					name: FeatherlessBYOKLMProvider.providerName,
+					vendor: FeatherlessBYOKLMProvider.providerId,
+					// Minimal settings scaffold: group existence is what the model-picker
+					// gate cares about. The actual API key is handled separately.
+					settings: {
+						[OmenIDEDefaults.chatModel]: {},
+					},
+				});
+				this._logService.info('BYOK: ensured Featherless language-model provider group (keyless warm UI)');
+				return;
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				if (message.includes('already exists')) {
+					this._logService.debug('BYOK: featherless provider group already exists');
+					return;
+				}
+				this._logService.warn(`BYOK: featherless provider group ensure failed (attempt ${attempt + 1}): ${message}`);
+			}
 		}
 	}
 
@@ -195,22 +209,26 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 	}
 
 	private async _promptFeatherlessApiKeyIfNeeded(force = false): Promise<void> {
-		if (await this._seedApiKeyFromEnvironment()) {
-			return;
-		}
+		// When invoked explicitly (force), always prompt so an existing (possibly
+		// invalid) key can be replaced. Otherwise only prompt when no key exists.
+		if (!force) {
+			if (await this._seedApiKeyFromEnvironment()) {
+				return;
+			}
 
-		const apiKey = await this._byokStorageService.getAPIKey(FeatherlessBYOKLMProvider.providerName);
-		if (apiKey) {
-			return;
-		}
+			const apiKey = await this._byokStorageService.getAPIKey(FeatherlessBYOKLMProvider.providerName);
+			if (apiKey) {
+				return;
+			}
 
-		await window.showInformationMessage(
-			'Welcome to Omen IDE! Enter your Featherless.ai API key to use GLM-5.2 for chat, agents, and codebase search.',
-			{ modal: true },
-		);
+			await window.showInformationMessage(
+				'Welcome to Omen IDE! Enter your Featherless.ai API key to use GLM-5.2 for chat, agents, and codebase search.',
+				{ modal: true },
+			);
+		}
 
 		const key = await window.showInputBox({
-			title: 'Welcome to Omen IDE',
+			title: force ? 'Featherless API Key' : 'Welcome to Omen IDE',
 			prompt: 'Enter your Featherless.ai API key to chat with GLM-5.2',
 			password: true,
 			ignoreFocusOut: true,

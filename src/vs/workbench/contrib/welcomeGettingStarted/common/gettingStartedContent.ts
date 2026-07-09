@@ -13,6 +13,7 @@ import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js'
 import { NotebookSetting } from '../../notebook/common/notebookCommon.js';
 import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessibility/common/accessibility.js';
 import { URI } from '../../../../base/common/uri.js';
+import { FEATHERLESS_CONFIGURE_API_KEY_COMMAND } from '../../../services/chat/common/featherless.js';
 import product from '../../../../platform/product/common/product.js';
 
 interface IGettingStartedContentProvider {
@@ -28,7 +29,7 @@ const defaultChat = {
 };
 
 export function copilotSettingsMessage(manageSettingsUrl: string): string {
-	return localize({ key: 'settings', comment: ['{Locked="["}', '{Locked="]({0})"}', '{Locked="]({1})"}'] }, "{0} Copilot may show [public code]({1}) suggestions and use your data to improve the product. You can change these [settings]({2}) anytime.", defaultChat.provider.default.name, defaultChat.publicCodeMatchesUrl, manageSettingsUrl);
+	return localize({ key: 'settings', comment: ['{Locked="["}', '{Locked="]({0})"}', '{Locked="]({1})"}'] }, "{0} Featherless may show [public code]({1}) suggestions and use your data to improve the product. You can change these [settings]({2}) anytime.", defaultChat.provider.default.name, defaultChat.publicCodeMatchesUrl, manageSettingsUrl);
 }
 
 class GettingStartedContentProviderRegistry {
@@ -241,8 +242,8 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
 				{
 					id: 'omenideFeatherlessKey',
 					title: localize('gettingStarted.omenide.featherless.title', "Connect Featherless.ai"),
-					description: localize('gettingStarted.omenide.featherless.description', "Omen IDE runs entirely on Featherless.ai — no GitHub or Copilot account required. Paste your API key to turn on chat, Tab autocomplete, and codebase search.\n{0}\n{1}", Button(localize('omenide.enterKey', "Enter API Key"), 'command:omenide.configureFeatherlessApiKey'), Button(localize('omenide.getKey', "Get a Featherless Key"), 'https://featherless.ai/account/api-keys')),
-					completionEvents: ['onCommand:omenide.configureFeatherlessApiKey'],
+					description: localize('gettingStarted.omenide.featherless.description', "Omen IDE runs entirely on Featherless.ai — no GitHub or Copilot account required. Paste your API key to turn on chat, Tab autocomplete, and codebase search.\n{0}\n{1}", Button(localize('omenide.enterKey', "Enter API Key"), `command:${FEATHERLESS_CONFIGURE_API_KEY_COMMAND}`), Button(localize('omenide.getKey', "Get a Featherless Key"), 'https://featherless.ai/account/api-keys')),
+					completionEvents: [`onCommand:${FEATHERLESS_CONFIGURE_API_KEY_COMMAND}`],
 					media: { type: 'svg', altText: 'Connect your Featherless.ai API key', path: 'ai-powered-suggestions.svg' },
 				},
 				{

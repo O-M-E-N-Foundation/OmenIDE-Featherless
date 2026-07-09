@@ -29,6 +29,7 @@ import { IOTelService, type OTelModelOptions } from '../../../platform/otel/comm
 import { retrieveCapturingTokenByCorrelation, runWithCapturingToken } from '../../../platform/requestLogger/node/requestLogger';
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
+import { InlineThinkTagStreamParser } from '../../../platform/thinking/common/inlineThinkTagParser';
 import { isEncryptedThinkingDelta } from '../../../platform/thinking/common/thinking';
 import { BaseTokensPerCompletion } from '../../../platform/tokenizer/node/tokenizer';
 import { TelemetryCorrelationId } from '../../../util/common/telemetryCorrelationId';
@@ -842,20 +843,42 @@ export class CopilotLanguageModelWrapper extends Disposable {
 
 	async provideLanguageModelResponse(endpoint: IChatEndpoint, messages: Array<vscode.LanguageModelChatMessage | vscode.LanguageModelChatMessage2>, options: vscode.ProvideLanguageModelChatResponseOptions, extensionId: string | undefined, progress: vscode.Progress<LMResponsePart>, token: vscode.CancellationToken): Promise<void> {
 		let thinkingActive = false;
+		// Some OpenAI-compatible servers (e.g. Featherless serving GLM /
+		// DeepSeek-R1 style models) emit reasoning inline as a leading
+		// `<think>...</think>` block in the text stream instead of a dedicated
+		// reasoning field. Split it out so tags never reach the visible
+		// response (or get echoed back into history on later turns).
+		const inlineThinkParser = new InlineThinkTagStreamParser();
+		const reportThinking = (text: string, id?: string, metadata?: Record<string, unknown>) => {
+			progress.report(new vscode.LanguageModelThinkingPart(text, id, metadata));
+			thinkingActive = true;
+		};
+		const reportText = (text: string) => {
+			if (thinkingActive) {
+				progress.report(new vscode.LanguageModelThinkingPart('', '', { vscode_reasoning_done: true }));
+				thinkingActive = false;
+			}
+			progress.report(new vscode.LanguageModelTextPart(text));
+		};
 		const finishCallback: FinishedCallback = async (_text, index, delta): Promise<undefined> => {
 			if (delta.thinking) {
 				// Show thinking progress for unencrypted thinking deltas
 				if (!isEncryptedThinkingDelta(delta.thinking)) {
 					const text = delta.thinking.text ?? '';
-					progress.report(new vscode.LanguageModelThinkingPart(text, delta.thinking.id, delta.thinking.metadata));
-					thinkingActive = true;
+					reportThinking(text, delta.thinking.id, delta.thinking.metadata);
 				}
-			} else if (thinkingActive) {
+			} else if (thinkingActive && !delta.text) {
 				progress.report(new vscode.LanguageModelThinkingPart('', '', { vscode_reasoning_done: true }));
 				thinkingActive = false;
 			}
 			if (delta.text) {
-				progress.report(new vscode.LanguageModelTextPart(delta.text));
+				const { text, thinking } = inlineThinkParser.push(delta.text);
+				if (thinking) {
+					reportThinking(thinking);
+				}
+				if (text) {
+					reportText(text);
+				}
 			}
 			if (delta.copilotToolCalls) {
 				for (const call of delta.copilotToolCalls) {
@@ -884,6 +907,17 @@ export class CopilotLanguageModelWrapper extends Disposable {
 			return undefined;
 		};
 		const usage = await this._provideLanguageModelResponse(endpoint, messages, options, extensionId, finishCallback, token);
+		{
+			// Emit anything the inline think-tag parser was still buffering (e.g.
+			// an unterminated think block when generation hit the token limit).
+			const { text, thinking } = inlineThinkParser.flush();
+			if (thinking) {
+				reportThinking(thinking);
+			}
+			if (text) {
+				reportText(text);
+			}
+		}
 		if (usage) {
 			progress.report(new vscode.LanguageModelDataPart(new TextEncoder().encode(JSON.stringify(usage)), CustomDataPartMimeTypes.Usage));
 		}

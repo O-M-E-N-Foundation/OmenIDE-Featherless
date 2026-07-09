@@ -38,7 +38,7 @@ const debugReportFeedbackContextKey = 'github.copilot.debugReportFeedback';
 const previewFeaturesDisabledContextKey = 'github.copilot.previewFeaturesDisabled';
 const blackbirdExternalIndexingDisabledContextKey = 'github.copilot.blackbirdExternalIndexingDisabled';
 
-const clientByokEnabledContextKey = 'github.copilot.clientByokEnabled';
+const clientByokEnabledContextKey = 'omenide.clientByokEnabled';
 
 const debugContextKey = 'github.copilot.chat.debug';
 

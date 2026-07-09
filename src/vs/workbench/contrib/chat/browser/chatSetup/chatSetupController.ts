@@ -25,12 +25,15 @@ import { IActivityService, ProgressBadge } from '../../../../services/activity/c
 import { ILifecycleService } from '../../../../services/lifecycle/common/lifecycle.js';
 import { IExtensionsWorkbenchService } from '../../../extensions/common/extensions.js';
 import { ChatEntitlement, ChatEntitlementContext, ChatEntitlementRequests, isProUser } from '../../../../services/chat/common/chatEntitlementService.js';
+import { usesFeatherlessOnlyProvider } from '../../../../services/chat/common/featherless.js';
 import { CHAT_OPEN_ACTION_ID } from '../actions/chatActions.js';
 import { ChatViewContainerId, ChatViewId } from '../chat.js';
 import { ChatSetupAnonymous, ChatSetupStep, ChatSetupResultValue, InstallChatEvent, InstallChatClassification, refreshTokens, maybeEnableAuthExtension } from './chatSetup.js';
 import { IDefaultAccount } from '../../../../../base/common/defaultAccount.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
+import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
+import { EnablementState } from '../../../../services/extensionManagement/common/extensionManagement.js';
 
 const defaultChat = {
 	chatExtensionId: product.defaultChatAgent?.chatExtensionId ?? '',
@@ -260,6 +263,20 @@ export class ChatSetupController extends Disposable {
 	}
 
 	private async doInstall(): Promise<void> {
+		// Featherless-only Omen IDE ships the chat extension in-tree. Do not try
+		// to install it from the marketplace — that hangs (no gallery VSIX) and
+		// blocked the onboarding "Saving…" button.
+		if (usesFeatherlessOnlyProvider(this.productService)) {
+			const local = this.extensionsWorkbenchService.local.find(
+				e => ExtensionIdentifier.equals(e.identifier.id, defaultChat.chatExtensionId)
+			);
+			if (local && (local.enablementState === EnablementState.DisabledGlobally || local.enablementState === EnablementState.DisabledWorkspace)) {
+				await this.extensionsWorkbenchService.setEnablement([local], EnablementState.EnabledGlobally);
+				await this.extensionsWorkbenchService.updateRunningExtensions(localize('enableChatExtension', "Enabling AI features"));
+			}
+			return;
+		}
+
 		await this.extensionsWorkbenchService.install(defaultChat.chatExtensionId, {
 			enable: true,
 			isApplicationScoped: true, 	// install into all profiles

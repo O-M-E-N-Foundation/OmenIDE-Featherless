@@ -37,6 +37,12 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
+import { IExtensionsWorkbenchService } from '../../extensions/common/extensions.js';
+import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+import { IProductService } from '../../../../platform/product/common/productService.js';
+import { ensureFeatherlessChatExtensionReady } from '../../chat/common/featherlessSetup.js';
+import { FEATHERLESS_EXTENSION_SET_KEY_COMMAND } from '../../../services/chat/common/featherless.js';
 import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
 import {
 	OnboardingStepId,
@@ -84,7 +90,7 @@ assertDefined(product.defaultChatAgent, 'Onboarding requires a default chat agen
 const defaultChat = product.defaultChatAgent;
 
 /** Extension id for the in-tree Copilot/Featherless extension (`extensions/copilot`). */
-const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier('GitHub.copilot-chat');
+const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier('OmenIDE.omenide-chat');
 /** Secret key used by BYOKStorageService for the Featherless provider API key. */
 const FEATHERLESS_API_KEY_SECRET = 'copilot-byok-Featherless-api-key';
 
@@ -164,6 +170,10 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
 		@ISecretStorageService private readonly secretStorageService: ISecretStorageService,
 		@IExtensionService private readonly extensionService: IExtensionService,
+		@IExtensionsWorkbenchService private readonly extensionsWorkbenchService: IExtensionsWorkbenchService,
+		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
+		@IProductService private readonly productService: IProductService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -335,7 +345,8 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			this.featherlessApiKeyConfigured = true;
 			this.featherlessApiKeyInputBox?.hideMessage();
 
-			// Best-effort: wake the extension so it registers the Featherless provider.
+			// Do not block the wizard on extension activation / provider registration.
+			// The key is already in secret storage; BYOK will pick it up when ready.
 			void this._activateFeatherlessExtension(key);
 			return true;
 		} catch (err) {
@@ -355,18 +366,17 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 	private async _activateFeatherlessExtension(key: string): Promise<void> {
 		try {
-			await this.extensionService.activateById(COPILOT_CHAT_EXTENSION_ID, {
-				activationEvent: 'onStartupFinished',
-				extensionId: COPILOT_CHAT_EXTENSION_ID,
-				startup: false,
-			});
-		} catch {
-			return;
-		}
-		try {
-			await this.commandService.executeCommand('omenide.setFeatherlessApiKey', key);
-		} catch {
+			await ensureFeatherlessChatExtensionReady(
+				this.extensionsWorkbenchService,
+				this.extensionService,
+				this.chatEntitlementService,
+				this.productService,
+				this.logService,
+			);
+			await this.commandService.executeCommand(FEATHERLESS_EXTENSION_SET_KEY_COMMAND, key);
+		} catch (err) {
 			// Key is already in secret storage; provider registration can happen later.
+			this.logService.warn(`[onboarding] Featherless activation deferred: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
 
@@ -624,7 +634,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		title.textContent = localize('onboarding.signIn.heroTitle', "Welcome to Omen IDE");
 
 		const subtitle = append(contentMain, $('p.onboarding-a-signin-subtitle'));
-		subtitle.textContent = localize('onboarding.signIn.heroSubtitle', "Sign in to use GitHub Copilot.");
+		subtitle.textContent = localize('onboarding.signIn.heroSubtitle', "Enter your Featherless.ai API key to continue.");
 
 		const actions = append(contentMain, $('.onboarding-a-signin-actions'));
 
@@ -653,13 +663,13 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 		const disclaimerCol = append(footer, $('.onboarding-a-signin-disclaimer-col'));
 
-		// GitHub Copilot disclaimer
+		// Featherless disclaimer
 		const copilotDisclaimer = append(disclaimerCol, $('.onboarding-a-signin-disclaimer'));
 		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.prefix', "By signing in, you agree to {0}'s ", defaultChat.provider.default.name));
 		this._createInlineLink(copilotDisclaimer, localize('onboarding.signIn.disclaimer.terms', "Terms"), defaultChat.termsStatementUrl);
 		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.middle', " and "));
 		this._createInlineLink(copilotDisclaimer, localize('onboarding.signIn.disclaimer.privacy', "Privacy Statement"), defaultChat.privacyStatementUrl);
-		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.copilotPrefix', ". {0} Copilot may show ", defaultChat.provider.default.name));
+		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.copilotPrefix', ". {0} Featherless may show ", defaultChat.provider.default.name));
 		this._createInlineLink(copilotDisclaimer, localize('onboarding.signIn.disclaimer.publicCode', "public code"), defaultChat.publicCodeMatchesUrl);
 		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.improveSuffix', " suggestions and use your data to improve the product."));
 		copilotDisclaimer.append(' ');

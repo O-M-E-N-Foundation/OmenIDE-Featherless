@@ -34,12 +34,12 @@ import { ITelemetryService } from '../../../../../../platform/telemetry/common/t
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { TelemetryTrustedValue } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
+import { FEATHERLESS_CONFIGURE_API_KEY_COMMAND } from '../../../../../services/chat/common/featherless.js';
 import { IModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, IModelsControlManifest } from '../../../common/languageModels.js';
 import { ChatEntitlement, chatRequiresSetup, IChatEntitlementService, isProUser } from '../../../../../services/chat/common/chatEntitlementService.js';
 import * as semver from '../../../../../../base/common/semver/semver.js';
 import { IModelConfigurationAccess, IModelPickerDelegate } from './modelPickerActionItem.js';
 import { getModelPickerUnavailableReason, ModelPickerUnavailableReason } from './chatModelSelectionLogic.js';
-import { CHAT_SETUP_ACTION_ID } from '../../actions/chatActions.js';
 import { IUriIdentityService } from '../../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { GitHubPaths, IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IUpdateService, StateType } from '../../../../../../platform/update/common/update.js';
@@ -89,8 +89,8 @@ const ModelPickerSection = {
 const RESTRICTED_MODE_TRUST_ACTION_ID = 'restrictedModeTrust';
 
 /**
- * Id of the synthetic "Sign in to use Copilot..." entry shown when Chat still
- * requires sign-in / setup. Like the Trust entry it is a command, so it gets a
+ * Id of the synthetic "Enter Featherless API key..." entry shown when Chat still
+ * requires API key / setup. Like the Trust entry it is a command, so it gets a
  * plain `menuitem` role.
  */
 const SETUP_REQUIRED_SIGN_IN_ACTION_ID = 'setupRequiredSignIn';
@@ -460,8 +460,8 @@ function createManageModelsAction(commandService: ICommandService): IActionWidge
  * unavailable while in Restricted mode" header and a "Trust Workspace to enable
  * models..." action (invoking `onRequestTrust`) replace all of the above.
  * Likewise, when
- * `setupRequired` is set (trusted, but Chat still needs sign-in / setup), a
- * "Sign in to use Copilot" header and a Sign In action (invoking
+ * `setupRequired` is set (trusted, but Chat still needs an API key), a
+ * "Enter Featherless API key" header and an API key action (invoking
  * `onRequestSetup`) replace all of the above. `restrictedMode` takes precedence.
  */
 export function buildModelPickerItems(
@@ -520,14 +520,12 @@ export function buildModelPickerItems(
 		return items;
 	}
 	if (setupRequired) {
-		// Trusted, but Chat still needs sign-in / setup before any model is
-		// usable. Surface a Sign In action (mirroring the send-message setup
-		// prompt) instead of a misleading lone "Auto". Like restricted mode this
-		// is checked before the empty-list branch since stale machine-cached
-		// entries can make `models` non-empty.
+		// Trusted, but Chat still needs an API key before any model is usable.
+		// Surface an "Enter Featherless API key" action instead of any Copilot
+		// sign-in prompt.
 		items.push({
 			kind: ActionListItemKind.Header,
-			label: localize('chat.modelPicker.setupRequired', "Sign in to use Copilot"),
+			label: localize('chat.modelPicker.setupRequired', "Enter Featherless API key"),
 		});
 		items.push({
 			item: {
@@ -535,12 +533,12 @@ export function buildModelPickerItems(
 				enabled: !!onRequestSetup,
 				checked: false,
 				class: undefined,
-				tooltip: localize('chat.modelPicker.setupRequired.signInTooltip', "Sign in to GitHub Copilot to choose a model."),
-				label: localize('chat.modelPicker.setupRequired.signIn', "Sign in to use Copilot..."),
+				tooltip: localize('chat.modelPicker.setupRequired.signInTooltip', "Enter your Featherless.ai API key to choose a model."),
+				label: localize('chat.modelPicker.setupRequired.signIn', "Enter Featherless API key..."),
 				run: () => onRequestSetup?.()
 			},
 			kind: ActionListItemKind.Action,
-			label: localize('chat.modelPicker.setupRequired.signIn', "Sign in to use Copilot..."),
+			label: localize('chat.modelPicker.setupRequired.signIn', "Enter Featherless API key..."),
 			group: { title: '', icon: ThemeIcon.fromId(Codicon.signIn.id) },
 			disabled: !onRequestSetup,
 			hideIcon: false,
@@ -1217,7 +1215,8 @@ export class ModelPickerWidget extends Disposable {
 	 * refreshes the picker.
 	 */
 	private _requestSetup(): void {
-		this._commandService.executeCommand(CHAT_SETUP_ACTION_ID);
+		// Featherless-only: send the user directly to API key setup.
+		this._commandService.executeCommand(FEATHERLESS_CONFIGURE_API_KEY_COMMAND);
 	}
 
 	render(container: HTMLElement): void {
@@ -1571,7 +1570,7 @@ export class ModelPickerWidget extends Disposable {
 		this._domNode.ariaLabel = restrictedMode
 			? localize('chat.modelPicker.ariaLabelRestricted', "Models, unavailable while in Restricted mode")
 			: setupRequired
-				? localize('chat.modelPicker.ariaLabelSetupRequired', "Models, sign in to use Copilot")
+				? localize('chat.modelPicker.ariaLabelSetupRequired', "Models, enter Featherless API key")
 				: localize('chat.modelPicker.ariaLabel', "Models, {0}", modelLabel);
 	}
 

@@ -36,6 +36,7 @@ import { Dialog, DialogContentsAlignment } from '../../base/browser/ui/dialog/di
 import { createWorkbenchDialogOptions } from '../../workbench/browser/parts/dialogs/dialog.js';
 import { MarkdownString } from '../../base/common/htmlContent.js';
 import { localize, localize2 } from '../../nls.js';
+import { usesFeatherlessOnlyProvider } from '../../workbench/services/chat/common/featherless.js';
 
 const AIDisabledConfig = 'chat.disableAIFeatures';
 
@@ -70,10 +71,6 @@ function shouldSkipSessionsWelcome(environmentService: IWorkbenchEnvironmentServ
 		return true;
 	}
 	return typeof globalThis.location !== 'undefined' && new URLSearchParams(globalThis.location.search).has('skip-sessions-welcome');
-}
-
-function usesFeatherlessOnlyProvider(productService: IProductService): boolean {
-	return productService.defaultChatAgent?.provider?.default?.id === 'featherless';
 }
 
 class SessionsSetUpWidget extends Disposable {
@@ -430,7 +427,7 @@ class SessionsSetUpWidget extends Disposable {
 
 		const footer = localize(
 			{ key: 'welcomeFooter', comment: ['{Locked="["}', '{Locked="]({1})"}', '{Locked="]({2})"}', '{Locked="]({4})"}', '{Locked="]({5})"}'] },
-			"By continuing, you agree to {0}'s [Terms]({1}) and [Privacy Statement]({2}). {3} Copilot may show [public code]({4}) suggestions and use your data to improve the product. You can change these [settings]({5}) anytime.",
+			"By continuing, you agree to {0}'s [Terms]({1}) and [Privacy Statement]({2}). {3} Featherless may show [public code]({4}) suggestions and use your data to improve the product. You can change these [settings]({5}) anytime.",
 			providerName, termsUrl, privacyUrl, providerName, publicCodeUrl, settingsUrl
 		);
 		element.appendChild($('p', undefined, disposables.add(this.markdownRendererService.render(new MarkdownString(footer, { isTrusted: true }))).element));

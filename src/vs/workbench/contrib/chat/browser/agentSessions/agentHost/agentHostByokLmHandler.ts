@@ -104,11 +104,20 @@ export class AgentHostByokLmHandler extends Disposable implements IAgentHostByok
 
 	async listModels(_token: CancellationToken): Promise<IByokLmModelInfo[]> {
 		const models: IByokLmModelInfo[] = [];
+		// The bridge addresses models by `vendor/id`, so two renderer identifiers
+		// carrying the same vendor+id (e.g. a model resolved both grouplessly and
+		// through a provider group) are the same model — surface it once.
+		const seen = new Set<string>();
 		for (const identifier of this._languageModelsService.getLanguageModelIds()) {
 			const metadata = this._languageModelsService.lookupLanguageModel(identifier);
 			// Only genuine renderer BYOK models — exclude agent-host copies, which
 			// carry a `targetChatSessionType` and would otherwise re-enter the bridge.
 			if (metadata?.isBYOK && !metadata.targetChatSessionType) {
+				const key = `${metadata.vendor}/${metadata.id}`;
+				if (seen.has(key)) {
+					continue;
+				}
+				seen.add(key);
 				models.push({
 					vendor: metadata.vendor,
 					id: metadata.id,

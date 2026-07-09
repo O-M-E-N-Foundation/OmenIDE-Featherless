@@ -1273,7 +1273,7 @@ export class ChatModelsWidget extends Disposable {
 		this._register(this.languageModelsService.onDidChangeLanguageModelVendors(() => this.updateAddModelsButton()));
 		this._register(this.languageModelsService.onDidChangePinnedModels(() => this.viewModel.refresh()));
 		this._register(this.contextKeyService.onDidChangeContext(e => {
-			if (e.affectsSome(new Set(['github.copilot.clientByokEnabled']))) {
+			if (e.affectsSome(new Set(['omenide.clientByokEnabled']))) {
 				this.updateAddModelsButton();
 			}
 		}));

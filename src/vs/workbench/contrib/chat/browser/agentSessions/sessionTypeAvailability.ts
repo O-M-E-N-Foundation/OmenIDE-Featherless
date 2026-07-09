@@ -8,6 +8,7 @@ import { localize } from '../../../../../nls.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { ILanguageModelsService } from '../../common/languageModels.js';
+import { FEATHERLESS_CONFIGURE_API_KEY_COMMAND } from '../../../../services/chat/common/featherless.js';
 import { hasModelsTargetingSession } from '../widget/input/chatModelSelectionLogic.js';
 
 /**
@@ -108,8 +109,8 @@ export function getSessionTypeUnavailableDescription(availability: SessionTypeAv
 	switch (availability) {
 		case SessionTypeAvailability.SignInRequired:
 			return new MarkdownString(
-				localize('chat.sessionType.signInLink', "[Sign in](command:workbench.action.chat.triggerSetup)"),
-				{ isTrusted: { enabledCommands: ['workbench.action.chat.triggerSetup'] } }
+				localize('chat.sessionType.signInLink', "[Enter Featherless API key](command:{0})", FEATHERLESS_CONFIGURE_API_KEY_COMMAND),
+				{ isTrusted: { enabledCommands: [FEATHERLESS_CONFIGURE_API_KEY_COMMAND] } }
 			);
 		case SessionTypeAvailability.UpgradeRequired:
 			return new MarkdownString(
@@ -131,8 +132,8 @@ export function getSessionTypeUnavailableDescription(availability: SessionTypeAv
 export function getSessionTypeUnavailableHover(availability: SessionTypeAvailability): IMarkdownString | undefined {
 	switch (availability) {
 		case SessionTypeAvailability.SignInRequired: {
-			const hover = new MarkdownString('', { isTrusted: { enabledCommands: ['workbench.action.chat.triggerSetup'] }, supportThemeIcons: true });
-			hover.appendMarkdown(localize('chat.sessionType.signInHover', "[Sign in to GitHub Copilot](command:workbench.action.chat.triggerSetup) to use this agent."));
+			const hover = new MarkdownString('', { isTrusted: { enabledCommands: [FEATHERLESS_CONFIGURE_API_KEY_COMMAND] }, supportThemeIcons: true });
+			hover.appendMarkdown(localize('chat.sessionType.signInHover', "[Enter Featherless API key](command:{0}) to use this agent.", FEATHERLESS_CONFIGURE_API_KEY_COMMAND));
 			return hover;
 		}
 		case SessionTypeAvailability.UpgradeRequired: {
@@ -154,7 +155,7 @@ export function getSessionTypeUnavailableHover(availability: SessionTypeAvailabi
 export function getSessionTypeUnavailableLabel(availability: SessionTypeAvailability): string | undefined {
 	switch (availability) {
 		case SessionTypeAvailability.SignInRequired:
-			return localize('chat.sessionType.signInMobile', "Requires sign in");
+			return localize('chat.sessionType.signInMobile', "Requires Featherless API key");
 		case SessionTypeAvailability.UpgradeRequired:
 			return localize('chat.sessionType.upgradeMobile', "Requires GitHub Copilot Pro");
 		case SessionTypeAvailability.NoModels:

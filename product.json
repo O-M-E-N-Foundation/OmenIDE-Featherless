@@ -87,9 +87,9 @@
 		}
 	],
 	"defaultChatAgent": {
-		"extensionId": "GitHub.copilot",
-		"chatExtensionId": "GitHub.copilot-chat",
-		"chatExtensionOutputId": "GitHub.copilot-chat.GitHub Copilot Chat.log",
+		"extensionId": "OmenIDE.omenide-chat",
+		"chatExtensionId": "OmenIDE.omenide-chat",
+		"chatExtensionOutputId": "OmenIDE.omenide-chat.GitHub Copilot Chat.log",
 		"chatExtensionOutputExtensionStateCommand": "github.copilot.debug.extensionState",
 		"documentationUrl": "https://featherless.ai/docs/overview",
 		"termsStatementUrl": "https://featherless.ai/terms",
@@ -152,10 +152,10 @@
 	},
 	"trustedExtensionAuthAccess": {
 		"github": [
-			"GitHub.copilot-chat"
+			"OmenIDE.omenide-chat"
 		],
 		"github-enterprise": [
-			"GitHub.copilot-chat"
+			"OmenIDE.omenide-chat"
 		]
 	},
 	"onboardingKeymaps": [
@@ -234,7 +234,7 @@
 		}
 	],
 	"builtInExtensionsEnabledWithAutoUpdates": [
-		"GitHub.copilot-chat"
+		"OmenIDE.omenide-chat"
 	],
 	"configurationDefaults": {
 		"workbench.colorTheme": "Omen Dark"
