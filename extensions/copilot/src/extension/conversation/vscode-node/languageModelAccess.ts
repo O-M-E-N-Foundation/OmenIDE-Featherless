@@ -815,7 +815,9 @@ export class CopilotLanguageModelWrapper extends Disposable {
 				err.name = 'ChatQuotaExceeded';
 				throw err;
 			} else if (result.type === ChatFetchResponseType.RateLimited) {
-				const err = new Error(result.reason);
+				const outageStatus = await this._octoKitService.getGitHubOutageStatus();
+				const details = getErrorDetailsFromChatFetchError(result, this._authenticationService.copilotToken?.copilotPlan, outageStatus, this._authenticationService.copilotToken?.tokenBasedBilling, this._authenticationService.copilotToken?.quotaInfo.quota_reset_date);
+				const err = new Error(details.message);
 				err.name = 'ChatRateLimited';
 				throw err;
 			}

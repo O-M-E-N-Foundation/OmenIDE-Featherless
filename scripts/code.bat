@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-title VSCode Dev
+title Omen IDE Dev
 
 pushd %~dp0\..
 

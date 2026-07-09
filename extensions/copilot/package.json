@@ -2388,49 +2388,49 @@
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.individual.expired%",
-        "when": "github.copilot.interactiveSession.individual.expired && !github.copilot.hasByokModels"
+        "when": "github.copilot.interactiveSession.individual.expired && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.enterprise%",
-        "when": "github.copilot.interactiveSession.enterprise.disabled && !github.copilot.hasByokModels"
+        "when": "github.copilot.interactiveSession.enterprise.disabled && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.offline%",
-        "when": "github.copilot.offline && !github.copilot.hasByokModels"
+        "when": "github.copilot.offline && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.invalidToken%",
-        "when": "github.copilot.interactiveSession.invalidToken && !github.copilot.hasByokModels"
+        "when": "github.copilot.interactiveSession.invalidToken && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.rateLimited%",
-        "when": "github.copilot.interactiveSession.rateLimited && !github.copilot.hasByokModels"
+        "when": "github.copilot.interactiveSession.rateLimited && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.gitHubLoginFailed%",
-        "when": "github.copilot.interactiveSession.gitHubLoginFailed && !github.copilot.hasByokModels"
+        "when": "github.copilot.interactiveSession.gitHubLoginFailed && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.contactSupport%",
-        "when": "github.copilot.interactiveSession.contactSupport && !github.copilot.hasByokModels"
+        "when": "github.copilot.interactiveSession.contactSupport && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
         "title": "%copilot.title%",
         "content": "%github.copilot.viewsWelcome.chatDisabled%",
-        "when": "github.copilot.interactiveSession.chatDisabled && !github.copilot.hasByokModels"
+        "when": "github.copilot.interactiveSession.chatDisabled && !omenide.hasByokModels"
       },
       {
         "icon": "$(chat-sparkle)",
@@ -3282,6 +3282,18 @@
             "type": "boolean",
             "default": true,
             "description": "Enable Featherless FIM Tab autocomplete."
+          },
+          "omenide.featherless.concurrencyLimit": {
+            "type": "number",
+            "default": 8,
+            "minimum": 1,
+            "description": "Maximum concurrent Featherless request units for this workspace (matches your plan limit). GLM-5.2 uses 4 units per request."
+          },
+          "omenide.featherless.concurrencyMaxRetries": {
+            "type": "number",
+            "default": 12,
+            "minimum": 1,
+            "description": "How many times to retry Featherless requests when the provider reports a concurrency limit."
           }
         }
       },

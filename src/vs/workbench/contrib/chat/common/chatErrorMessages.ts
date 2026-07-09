@@ -118,6 +118,9 @@ function secondsToHumanReadableTime(seconds: number): string {
 function getRateLimitMessage(fetchError: IChatFetchErrorPayload, copilotPlan: string | undefined): string {
 	const retryAfterString = fetchError.retryAfter ? secondsToHumanReadableTime(fetchError.retryAfter) : localize('chatError.aMoment', "a moment");
 	const code = fetchError.capiError?.code;
+	if (code === 'concurrency_limit_exceeded') {
+		return localize('chatError.rateLimit.featherlessConcurrency', "All Featherless request slots are in use. This request is queued and will retry automatically — please wait {0}.", retryAfterString);
+	}
 	if (code?.startsWith('agent_mode_limit_exceeded')) { // Rate limited in agent mode
 		return localize({ key: 'chatError.rateLimit.agentMode', comment: [`{Locked=']({'}`] }, "Sorry, you have exceeded the agent mode rate limit. Please switch to ask mode and try again in {0}. [Learn More]({1})", retryAfterString, RATE_LIMIT_LEARN_MORE_URL);
 	}

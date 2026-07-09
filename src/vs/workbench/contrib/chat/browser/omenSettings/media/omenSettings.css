@@ -1,0 +1,178 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.omen-settings-editor {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+	background: var(--vscode-editor-background);
+	color: var(--vscode-foreground);
+}
+
+.omen-settings-editor .omen-settings-split {
+	height: 100%;
+}
+
+.omen-settings-editor .omen-settings-sidebar {
+	height: 100%;
+	box-sizing: border-box;
+	padding: 12px 8px 12px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	background: var(--vscode-sideBar-background);
+	border-right: 1px solid var(--vscode-sideBar-border, transparent);
+}
+
+.omen-settings-editor .omen-settings-sidebar-title {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	opacity: 0.7;
+	padding: 4px 8px;
+}
+
+.omen-settings-editor .omen-settings-nav-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 10px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.omen-settings-editor .omen-settings-nav-item:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.omen-settings-editor .omen-settings-nav-item.selected {
+	background: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.omen-settings-editor .omen-settings-nav-item .codicon {
+	opacity: 0.9;
+}
+
+.omen-settings-editor .omen-settings-sidebar-footer {
+	margin-top: auto;
+	padding-top: 8px;
+	border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+}
+
+.omen-settings-editor .omen-settings-content {
+	height: 100%;
+	overflow: auto;
+	padding: 24px 32px 48px;
+	box-sizing: border-box;
+}
+
+.omen-settings-editor .omen-settings-section-title {
+	font-size: 22px;
+	font-weight: 600;
+	margin: 0 0 20px;
+}
+
+.omen-settings-editor .omen-settings-group {
+	border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+	border-radius: 8px;
+	overflow: hidden;
+	margin-bottom: 16px;
+	background: var(--vscode-editor-background);
+}
+
+.omen-settings-editor .omen-settings-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+	gap: 16px;
+	align-items: center;
+	padding: 14px 16px;
+	border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
+}
+
+.omen-settings-editor .omen-settings-row:first-child {
+	border-top: none;
+}
+
+.omen-settings-editor .omen-settings-row-label {
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.omen-settings-editor .omen-settings-row-description {
+	font-size: 12px;
+	opacity: 0.75;
+	margin-top: 4px;
+	line-height: 1.4;
+}
+
+.omen-settings-editor .omen-settings-row-control {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 8px;
+}
+
+.omen-settings-editor .omen-settings-row-control input[type="text"],
+.omen-settings-editor .omen-settings-row-control input[type="number"] {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 6px 8px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 4px;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font: inherit;
+}
+
+.omen-settings-editor .omen-settings-row-control input[type="checkbox"] {
+	width: 18px;
+	height: 18px;
+}
+
+.omen-settings-editor .omen-settings-status {
+	font-size: 12px;
+	opacity: 0.85;
+}
+
+.omen-settings-editor .omen-settings-status.configured {
+	color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.omen-settings-editor .omen-settings-status.missing {
+	color: var(--vscode-errorForeground);
+}
+
+.omen-settings-editor .omen-settings-link-row {
+	padding: 12px 16px;
+	font-size: 12px;
+	opacity: 0.85;
+}
+
+.omen-settings-editor .omen-settings-link-row a {
+	color: var(--vscode-textLink-foreground);
+	text-decoration: none;
+}
+
+.omen-settings-editor .omen-settings-link-row a:hover {
+	text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+	.omen-settings-editor .omen-settings-row {
+		grid-template-columns: 1fr;
+	}
+
+	.omen-settings-editor .omen-settings-row-control {
+		justify-content: flex-start;
+	}
+}

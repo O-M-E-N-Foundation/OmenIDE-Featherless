@@ -72,6 +72,8 @@ import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../../com
 import { type IChatModel, type IChatModelInputState, type IChatRequestVariableData, type ISerializableChatModelInputState } from '../../../common/model/chatModel.js';
 import { ChatElicitationRequestPart } from '../../../common/model/chatProgressTypes/chatElicitationRequestPart.js';
 import { ChatPlanReviewData } from '../../../common/model/chatProgressTypes/chatPlanReviewData.js';
+import { IWorkspacePlanService } from '../../../common/plan/workspacePlanService.js';
+import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { ChatQuestionCarouselData } from '../../../common/model/chatProgressTypes/chatQuestionCarouselData.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { getChatSessionType } from '../../../common/model/chatUri.js';
@@ -2592,7 +2594,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	): void {
 		const planReview = (inputReq as ChatInputRequestWithPlanReview).planReview;
 		if (planReview) {
-			this._setupPlanReviewInputRequest(inputReq, planReview, store, opts);
+			void this._setupPlanReviewInputRequest(inputReq, planReview, store, opts);
 			return;
 		}
 
@@ -2753,12 +2755,31 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		}));
 	}
 
-	private _setupPlanReviewInputRequest(
+	private async _setupPlanReviewInputRequest(
 		inputReq: ChatInputRequest,
 		planReview: IAgentHostPlanReview,
 		store: DisposableStore,
 		opts: IObserveTurnOptions,
-	): void {
+	): Promise<void> {
+		let planUriJson = planReview.planUri ? URI.parse(planReview.planUri).toJSON() : undefined;
+		if (planReview.planUri) {
+			const uri = URI.parse(planReview.planUri);
+			const workspacePlanService = this._instantiationService.invokeFunction(accessor => accessor.get(IWorkspacePlanService));
+			const fileService = this._instantiationService.invokeFunction(accessor => accessor.get(IFileService));
+			if (!workspacePlanService.isOmenPlanUri(uri)) {
+				try {
+					const file = await fileService.readFile(uri);
+					const imported = await workspacePlanService.importExternalPlan(
+						file.value.toString(),
+						planReview.title,
+						planReview.content,
+					);
+					planUriJson = imported.toJSON();
+				} catch (err) {
+					this._logService.warn(`[AgentHost] Failed to import plan into workspace: ${err}`);
+				}
+			}
+		}
 		const review = new ChatPlanReviewData(
 			planReview.title,
 			planReview.content,
@@ -2770,7 +2791,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				...(action.permissionLevel ? { permissionLevel: action.permissionLevel } : {}),
 			})),
 			planReview.canProvideFeedback,
-			planReview.planUri ? URI.parse(planReview.planUri).toJSON() : undefined,
+			planUriJson,
 			inputReq.id,
 		);
 		opts.sink([review]);

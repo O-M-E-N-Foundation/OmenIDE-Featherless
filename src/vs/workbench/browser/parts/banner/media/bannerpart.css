@@ -29,9 +29,9 @@
 .monaco-workbench .part.banner .icon-container.custom-icon {
 	background-repeat: no-repeat;
 	background-position: center center;
-	background-size: 16px;
+	background-size: 24px;
 	background-image: url('../../../../browser/media/code-icon.svg');
-	width: 16px;
+	width: 24px;
 	padding: 0;
 	margin: 0 6px 0 10px;
 }

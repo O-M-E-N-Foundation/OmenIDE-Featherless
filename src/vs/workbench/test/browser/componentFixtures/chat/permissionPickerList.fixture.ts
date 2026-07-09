@@ -46,7 +46,7 @@ function buildItems(options: PermissionPickerListFixtureOptions): IActionListIte
 			...actionTemplate,
 			id: 'chat.permissions.default',
 			label: localize('permissions.default', "Default Approvals"),
-			detail: localize('permissions.default.subtext', "Copilot uses your configured settings"),
+			detail: localize('permissions.default.subtext', "The agent uses your configured settings"),
 			icon: ThemeIcon.fromId(Codicon.shield.id),
 			checked: true,
 			inlineToggle: showToggle ? {

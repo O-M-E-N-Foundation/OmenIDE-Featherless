@@ -80,6 +80,7 @@ const responsePartSchema = Adapt.v<Exclude<IChatProgressResponseContent, IChatMc
 				case 'pullRequest':
 				case 'questionCarousel':
 				case 'planReview':
+				case 'createdPlan':
 				case 'undoStop':
 				case 'warning':
 				case 'info':

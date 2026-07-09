@@ -372,11 +372,16 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 					whenLanguageModelReady,
 					whenToolsModelReady
 				]);
-				const ready = await Promise.race([
+				const racePromises: Promise<unknown>[] = [
 					timeout(this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 20000).then(() => 'timedout'),
-					this.whenPanelAgentHasGuidance(disposables).then(() => 'panelGuidance'),
-					allReady
-				]);
+					allReady,
+				];
+				// Featherless/BYOK: don't abort when a Copilot-style welcome view appears while the
+				// real extension agent is still activating — wait for models/agents instead.
+				if (!this.chatEntitlementService.clientByokEnabled && !this.chatEntitlementService.hasByokModels) {
+					racePromises.push(this.whenPanelAgentHasGuidance(disposables).then(() => 'panelGuidance'));
+				}
+				const ready = await Promise.race(racePromises);
 
 				if (ready === 'panelGuidance') {
 					const warningMessage = localize('chatTookLongWarningExtension', "Please try again.");

@@ -873,8 +873,8 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	cursor: text;
 	background-color: var(--vscode-input-background);
 	border: 1px solid var(--vscode-input-border, transparent);
-	border-radius: var(--vscode-cornerRadius-large);
-	padding: 0 6px 6px 6px;
+	border-radius: var(--vscode-cornerRadius-xLarge, var(--vscode-cornerRadius-large));
+	padding: 0 8px 4px 8px;
 	/* top padding is inside the editor widget */
 	width: 100%;
 	position: relative;
@@ -1041,7 +1041,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	}
 }
 
-/* Context usage widget container - positioned in the secondary toolbar below input */
+/* Context usage widget — main toolbar row (right of mode/model/approvals chips). */
 .interactive-session .chat-input-toolbars .chat-context-usage-container,
 .interactive-session .chat-secondary-toolbar .chat-context-usage-container {
 	display: flex;
@@ -1657,8 +1657,8 @@ have to be updated for changes to the rules above, or to support more deeply nes
 .interactive-session .chat-input-toolbars {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	margin-top: 4px;
+	gap: 4px;
+	margin-top: 2px;
 }
 
 /* Secondary toolbar below the input box */
@@ -1856,10 +1856,21 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	}
 }
 
-.interactive-session .chat-input-toolbar .chat-input-picker-item .action-label,
+.interactive-session .chat-input-toolbar .chat-mode-picker-item .action-label {
+	gap: 4px;
+	white-space: nowrap;
+}
+
+.interactive-session .chat-input-toolbar .chat-mode-picker-item .action-label .codicon-chevron-down {
+	flex-shrink: 0;
+}
+
+.interactive-session .chat-input-toolbar .chat-input-picker-item .action-label:not(.model-picker-split),
 .interactive-session .chat-input-toolbar .chat-sessionPicker-item .action-label {
-	height: 16px;
-	padding: 3px 6px;
+	height: 22px;
+	padding: 2px 8px;
+	border-radius: var(--vscode-cornerRadius-medium);
+	background-color: color-mix(in srgb, var(--vscode-input-foreground) 6%, transparent);
 	display: flex;
 	align-items: center;
 	color: var(--vscode-icon-foreground);
@@ -2000,15 +2011,25 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 
-/* Add context button icon sizing */
-.interactive-session .chat-input-toolbar .action-item:has(.codicon-add) .action-label {
+/* Icon-only attach and mic buttons in the execute toolbar */
+.interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label.codicon-attach) > .action-label.codicon-attach,
+.interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label.codicon-mic) > .action-label.codicon-mic {
+	box-sizing: border-box;
+	width: 22px;
+	height: 22px;
+	padding: 0;
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	border-radius: var(--vscode-cornerRadius-circle);
+	transition: background-color 250ms ease;
 }
 
-.interactive-session .chat-input-toolbar .action-item:has(.codicon-add) .codicon-add {
-	font-size: 14px;
+.interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-attach) > .action-label.codicon-attach:hover,
+.interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-mic) > .action-label.codicon-mic:hover,
+.interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-attach) > .action-label.codicon-attach:focus-visible,
+.interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-mic) > .action-label.codicon-mic:focus-visible {
+	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 .monaco-workbench .interactive-session .chat-input-toolbar .chat-input-picker-item .action-label .codicon-chevron-down,
@@ -4687,4 +4708,14 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	background: none;
 	-webkit-text-fill-color: currentColor;
 	color: var(--vscode-foreground);
+}
+
+/* Plan mode prominence */
+.chat-mode-picker-item.chat-mode-plan-active .chat-input-picker-label {
+	color: #e5c07b;
+	font-weight: 600;
+}
+
+.interactive-session .interactive-input-part.chat-mode-plan-active:not(.compact) .chat-input-container {
+	box-shadow: 0 0 0 1px rgba(229, 192, 123, 0.45);
 }

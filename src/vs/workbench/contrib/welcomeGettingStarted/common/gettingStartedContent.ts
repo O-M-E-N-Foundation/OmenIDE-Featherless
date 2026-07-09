@@ -259,7 +259,7 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
 				{
 					id: 'omenidePickModel',
 					title: localize('gettingStarted.omenide.model.title', "Pick your model & autocomplete"),
-					description: localize('gettingStarted.omenide.model.description', "Omen IDE defaults to GLM-5.2 for chat and Qwen CodeFIM for Tab completions. Switch models any time from the chat model picker, or fine-tune completions in settings.\n{0}\n{1}", Button(localize('omenide.modelPicker', "Open Model Picker"), 'command:workbench.action.chat.openModelPicker'), Button(localize('omenide.autocompleteSettings', "Autocomplete Settings"), 'command:workbench.action.openSettings?%5B%22omenide.featherless.autocomplete%22%5D')),
+					description: localize('gettingStarted.omenide.model.description', "Omen IDE defaults to GLM-5.2 for chat and Qwen CodeFIM for Tab completions. Switch models any time from the chat model picker, or fine-tune completions in settings.\n{0}\n{1}", Button(localize('omenide.modelPicker', "Open Model Picker"), 'command:workbench.action.chat.openModelPicker'), Button(localize('omenide.autocompleteSettings', "Omen IDE Settings"), 'command:omenide.openSettings')),
 					media: { type: 'svg', altText: 'Choose your default model', path: 'multi-file-edits.svg' },
 				},
 				{

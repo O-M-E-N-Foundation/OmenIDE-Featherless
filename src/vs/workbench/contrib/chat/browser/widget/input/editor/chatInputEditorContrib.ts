@@ -35,6 +35,7 @@ import { getChatSessionType } from '../../../../common/model/chatUri.js';
 import { ICustomizationHarnessService } from '../../../../common/customizationHarnessService.js';
 
 const decorationDescription = 'chat';
+const defaultInputPlaceholder = localize('chat.input.placeholder.default', "Plan, build, / for commands, @ for context");
 const placeholderDecorationType = 'chat-session-detail';
 const slashCommandTextDecorationType = 'chat-session-text';
 const clickableSlashPromptTextDecorationType = 'chat-session-clickable-text';
@@ -221,9 +222,7 @@ class InputEditorDecorations extends Disposable {
 		}
 
 		if (!inputValue) {
-			const mode = this.widget.input.currentModeObs.get();
-			const placeholder = mode.argumentHint?.get() ?? mode.description.get() ?? '';
-			const displayPlaceholder = viewModel.inputPlaceholder || placeholder;
+			const displayPlaceholder = viewModel.inputPlaceholder || defaultInputPlaceholder;
 
 			const decoration: IDecorationOptions[] = [
 				{

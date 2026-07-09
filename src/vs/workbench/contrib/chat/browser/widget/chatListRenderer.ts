@@ -85,6 +85,7 @@ import { ChatElicitationContentPart } from './chatContentParts/chatElicitationCo
 import { ChatErrorConfirmationContentPart } from './chatContentParts/chatErrorConfirmationPart.js';
 import { ChatErrorContentPart } from './chatContentParts/chatErrorContentPart.js';
 import { ChatPlanReviewPart } from './chatContentParts/chatPlanReviewPart.js';
+import { ChatCreatedPlanPart } from './chatContentParts/chatCreatedPlanPart.js';
 import { ChatQuestionCarouselPart } from './chatContentParts/chatQuestionCarouselPart.js';
 import { ChatExtensionsContentPart } from './chatContentParts/chatExtensionsContentPart.js';
 import { ChatMarkdownContentPart, codeblockHasClosingBackticks } from './chatContentParts/chatMarkdownContentPart.js';
@@ -2513,6 +2514,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				return this.renderQuestionCarousel(context, content, templateData);
 			} else if (content.kind === 'planReview') {
 				return this.renderPlanReview(context, content, templateData);
+			} else if (content.kind === 'createdPlan') {
+				return this.instantiationService.createInstance(ChatCreatedPlanPart, content, context);
 			} else if (content.kind === 'changesSummary') {
 				return this.renderChangesSummary(content, context, templateData);
 			} else if (content.kind === 'turnPills') {

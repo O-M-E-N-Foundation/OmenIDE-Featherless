@@ -472,8 +472,8 @@ export class OpenPermissionPickerAction extends Action2 {
 			f1: false,
 			precondition: ChatContextKeys.enabled,
 			menu: {
-				id: MenuId.ChatInputSecondary,
-				order: 1,
+				id: MenuId.ChatInput,
+				order: 4,
 				group: 'navigation',
 				when:
 					ContextKeyExpr.and(

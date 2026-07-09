@@ -399,6 +399,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	private inputSideToolbarContainer?: HTMLElement;
 	private secondaryToolbarContainer!: HTMLElement;
+	private genericChipsContainer!: HTMLElement;
 	private secondaryToolbar!: MenuWorkbenchToolBar;
 	private statusToolbarContainer!: HTMLElement;
 	private statusToolbar!: MenuWorkbenchToolBar;
@@ -1300,6 +1301,56 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				return (sessionResource && this.chatSessionsService.getCustomAgentTargetForSessionType(getChatSessionType(sessionResource))) ?? Target.Undefined;
 			},
 		};
+	}
+
+	private _createPermissionPickerDelegate(): IPermissionPickerDelegate {
+		return {
+			currentPermissionLevel: this._currentPermissionLevel,
+			setPermissionLevel: (level: ChatPermissionLevel) => {
+				this.setPermissionLevel(level);
+			},
+			getExtensionPermissions: () => {
+				const sessionResource = this.getCurrentSessionResource();
+				const group = this.getActiveExtensionPermissionGroup(sessionResource);
+				if (!group) {
+					return undefined;
+				}
+				const current = sessionResource ? this.chatSessionsService.getSessionOption(sessionResource, group.id) : undefined;
+				const defaultId = group.selected?.id ?? group.items.find(i => i.default)?.id;
+				const rawSelectedId = current === undefined
+					? defaultId
+					: typeof current === 'string' ? current : current.id;
+				const selectedId = rawSelectedId !== undefined && group.items.some(i => i.id === rawSelectedId)
+					? rawSelectedId
+					: defaultId;
+				const sessionType = sessionResource
+					? getChatSessionType(sessionResource)
+					: (this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() ?? '');
+				return { sessionType, groupId: group.id, items: group.items, selectedId };
+			},
+			setExtensionPermission: (groupId: string, item: IChatSessionProviderOptionItem) => {
+				this.updateOptionContextKey(groupId, item.id);
+				this.getOrCreateOptionEmitter(groupId).fire(item);
+				const sessionResource = this.getCurrentSessionResource();
+				if (sessionResource) {
+					this.chatSessionsService.setSessionOption(sessionResource, groupId, item);
+				}
+				this.permissionWidget?.refresh();
+			},
+			isSandboxToggleApplicable: () => this.getEffectiveSessionType(this.getCurrentSessionResource()) === SessionType.Local,
+		};
+	}
+
+	private _createPermissionPickerWidget(action: MenuItemAction, pickerOptions: IChatInputPickerOptions): PermissionPickerActionItem {
+		const widget = this.instantiationService.createInstance(PermissionPickerActionItem, action, this._createPermissionPickerDelegate(), pickerOptions);
+		this.permissionWidget = widget;
+		this.permissionWidgetDisposeListener.value = widget.onDidDispose(() => {
+			if (this.permissionWidget === widget) {
+				this.permissionWidget = undefined;
+			}
+			this.permissionWidgetDisposeListener.clear();
+		});
+		return widget;
 	}
 
 	public openPermissionPicker(): void {
@@ -2869,6 +2920,26 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	/**
+	 * Hides the secondary toolbar row when it has nothing to show (agent-host
+	 * chips, status indicators, or leftover secondary-menu pickers). The
+	 * context-usage ring lives in the main toolbar row instead.
+	 */
+	private _updateSecondaryToolbarVisibility(): void {
+		if (!this.secondaryToolbarContainer || !this.secondaryToolbar || !this.statusToolbar) {
+			return;
+		}
+		if (this.options.renderStyle === 'compact') {
+			this.secondaryToolbarContainer.style.display = 'none';
+			return;
+		}
+		const hasSecondaryActions = !this.secondaryToolbar.getElement().classList.contains('has-no-actions');
+		const hasStatusActions = !this.statusToolbar.getElement().classList.contains('has-no-actions');
+		const genericChips = this.genericChipsContainer;
+		const hasGenericChips = !!genericChips && genericChips.childElementCount > 0;
+		this.secondaryToolbarContainer.style.display = (hasSecondaryActions || hasStatusActions || hasGenericChips) ? '' : 'none';
+	}
+
+	/**
 	 * Updates the context usage widget based on the current model.
 	 */
 	private updateContextUsageWidget(): void {
@@ -3033,6 +3104,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		container.append(this.container);
 		this.container.append(this.chatInputOverlay);
 		this.container.classList.toggle('compact', this.options.renderStyle === 'compact');
+		this._register(autorun(reader => {
+			const mode = this._currentModeObservable.read(reader);
+			this.container.classList.toggle('chat-mode-plan-active', mode.id === ChatMode.Plan.id);
+		}));
 
 		// Create a scoped context key service for option group visibility expressions
 		// This isolates chatSessionOption.* context keys to this specific chat input instance
@@ -3047,9 +3122,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.attachedContextContainer = elements.attachedContextContainer;
 		const toolbarsContainer = elements.inputToolbars;
 		this.secondaryToolbarContainer = elements.secondaryToolbar;
-		if (this.options.renderStyle === 'compact') {
-			this.secondaryToolbarContainer.style.display = 'none';
-		}
 		this.chatEditingSessionWidgetContainer = elements.chatEditingSessionWidgetContainer;
 		this.chatInputTodoListWidgetContainer = elements.chatInputTodoListWidgetContainer;
 		this.chatArtifactsWidgetContainer = elements.chatArtifactsWidgetContainer;
@@ -3064,11 +3136,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.contextUsageWidgetContainer = elements.contextUsageWidgetContainer;
 		this.statusToolbarContainer = elements.statusToolbarContainer;
 
-		if (this.options.renderStyle === 'compact') {
-			toolbarsContainer.prepend(this.contextUsageWidgetContainer);
-		}
+		// Omen IDE: keep the context-usage ring in the main toolbar row (right side),
+		// Cursor-style, instead of the secondary toolbar below the input.
+		toolbarsContainer.prepend(this.contextUsageWidgetContainer);
 
-		// Context usage widget — will be positioned in the toolbar after toolbars are created
+		// Context usage widget — positioned in the toolbar after toolbars are created
 		this.contextUsageWidget = this._register(this.instantiationService.createInstance(ChatContextUsageWidget));
 		this.contextUsageWidget.setChatWidget(widget);
 		this.contextUsageWidget.setSelectedModel(this._currentLanguageModel.get()?.identifier);
@@ -3225,6 +3297,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			actionContext: { widget },
 			compact: derived(reader => this._stableInputPartWidth.read(reader) < CHAT_INPUT_PICKER_COLLAPSE_WIDTH),
 		};
+		// Mode picker stays expanded (icon + label + chevron), Cursor-style.
+		const modePickerOptions: IChatInputPickerOptions = {
+			...pickerOptions,
+			compact: constObservable(false),
+		};
 		const primarySessionPickerOptions: IChatInputPickerOptions = {
 			...pickerOptions,
 			compact: constObservable(true),
@@ -3238,7 +3315,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this._register(dom.addStandardDisposableListener(toolbarsContainer, dom.EventType.CLICK, e => this.inputEditor.focus()));
 		this._register(dom.addStandardDisposableListener(this.attachmentsContainer, dom.EventType.CLICK, e => this.inputEditor.focus()));
 		const shorterChatInputActionIds = new Set<string>([
-			OpenModePickerAction.ID,
 			ConfigureToolsAction.ID,
 		]);
 		this.inputActionsToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, this.options.renderInputToolbarBelowInput ? this.attachmentsContainer : toolbarsContainer, MenuId.ChatInput, {
@@ -3285,7 +3361,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, itemDelegate, pickerOptions);
 				} else if (action.id === OpenModePickerAction.ID && action instanceof MenuItemAction) {
 					const delegate: IModePickerDelegate = this._createModePickerDelegate();
-					return this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, pickerOptions);
+					return this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, modePickerOptions);
+				} else if (action.id === OpenPermissionPickerAction.ID && action instanceof MenuItemAction) {
+					return this._createPermissionPickerWidget(action, pickerOptions);
 				} else if (action.id === OpenAutomationsWorkspacePickerAction.ID && action instanceof MenuItemAction) {
 					// Toolbar chip for an externally-owned workspace picker
 					// (today: the automations dialog's single picker instance,
@@ -3409,6 +3487,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		// space (`flex: 1 1 0`) while the chips pin to the right next to
 		// the context-usage widget.
 		const genericChipsContainer = dom.$('.chat-secondary-generic-chips');
+		this.genericChipsContainer = genericChipsContainer;
 		const genericChipsLane = this._register(this.instantiationService.createInstance(
 			AgentHostGenericConfigChips,
 			widget,
@@ -3458,50 +3537,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						return new HiddenActionViewItem(action);
 					}
 				} else if (action.id === OpenPermissionPickerAction.ID && action instanceof MenuItemAction) {
-					const delegate: IPermissionPickerDelegate = {
-						currentPermissionLevel: this._currentPermissionLevel,
-						setPermissionLevel: (level: ChatPermissionLevel) => {
-							this.setPermissionLevel(level);
-						},
-						getExtensionPermissions: () => {
-							const sessionResource = this.getCurrentSessionResource();
-							const group = this.getActiveExtensionPermissionGroup(sessionResource);
-							if (!group) {
-								return undefined;
-							}
-							const current = sessionResource ? this.chatSessionsService.getSessionOption(sessionResource, group.id) : undefined;
-							const defaultId = group.selected?.id ?? group.items.find(i => i.default)?.id;
-							const rawSelectedId = current === undefined
-								? defaultId
-								: typeof current === 'string' ? current : current.id;
-							const selectedId = rawSelectedId !== undefined && group.items.some(i => i.id === rawSelectedId)
-								? rawSelectedId
-								: defaultId;
-							const sessionType = sessionResource
-								? getChatSessionType(sessionResource)
-								: (this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() ?? '');
-							return { sessionType, groupId: group.id, items: group.items, selectedId };
-						},
-						setExtensionPermission: (groupId: string, item: IChatSessionProviderOptionItem) => {
-							this.updateOptionContextKey(groupId, item.id);
-							this.getOrCreateOptionEmitter(groupId).fire(item);
-							const sessionResource = this.getCurrentSessionResource();
-							if (sessionResource) {
-								this.chatSessionsService.setSessionOption(sessionResource, groupId, item);
-							}
-							this.permissionWidget?.refresh();
-						},
-						isSandboxToggleApplicable: () => this.getEffectiveSessionType(this.getCurrentSessionResource()) === SessionType.Local,
-					};
-					const widget = this.instantiationService.createInstance(PermissionPickerActionItem, action, delegate, secondaryPickerOptions);
-					this.permissionWidget = widget;
-					this.permissionWidgetDisposeListener.value = widget.onDidDispose(() => {
-						if (this.permissionWidget === widget) {
-							this.permissionWidget = undefined;
-						}
-						this.permissionWidgetDisposeListener.clear();
-					});
-					return widget;
+					return this._createPermissionPickerWidget(action, secondaryPickerOptions);
 				} else if (
 					(action.id === OpenAgentHostModePickerAction.ID
 						|| action.id === OpenAgentHostAutoApprovePickerAction.ID
@@ -3548,6 +3584,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			if (dom.isHTMLElement(container)) {
 				this.chatSessionPickerContainer = container;
 			}
+			this._updateSecondaryToolbarVisibility();
 		}));
 
 		// Extension-contributed status indicators; non-responsive so items don't collapse.
@@ -3559,6 +3596,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}));
 		this.statusToolbar.getElement().classList.add('chat-input-status-toolbar');
 		this.statusToolbar.context = { widget } satisfies IChatExecuteActionContext;
+		this._register(this.statusToolbar.onDidChangeMenuItems(() => this._updateSecondaryToolbarVisibility()));
+		this._updateSecondaryToolbarVisibility();
 
 		let inputModel = this.modelService.getModel(this.inputUri);
 		if (!inputModel) {

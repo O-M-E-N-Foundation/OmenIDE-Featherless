@@ -51,10 +51,19 @@ export interface IModePickerDelegate {
 
 // TODO: there should be an icon contributed for built-in modes
 const builtinDefaultIcon = (mode: IChatMode) => {
-	switch (mode.name.get().toLowerCase()) {
-		case 'ask': return Codicon.ask;
-		case 'plan': return Codicon.tasklist;
-		default: return undefined;
+	switch (mode.id) {
+		case ChatMode.Ask.id: return Codicon.ask;
+		case ChatMode.Plan.id: return Codicon.tasklist;
+		case ChatMode.Debug.id: return Codicon.debug;
+		case ChatMode.Agent.id: return Codicon.agent;
+		default:
+			switch (mode.name.get().toLowerCase()) {
+				case 'ask': return Codicon.ask;
+				case 'plan': return Codicon.tasklist;
+				case 'debug': return Codicon.debug;
+				case 'agent': return Codicon.agent;
+				default: return undefined;
+			}
 	}
 };
 
@@ -238,6 +247,14 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 					...customBuiltinModeActions,
 					...customModeActions
 				]);
+				// Surface the Agent mode keybinding (Ctrl+I) on the Agent entry, Cursor-style.
+				const agentKeybinding = keybindingService.lookupKeybinding(ToggleAgentModeActionId);
+				if (agentKeybinding && agentMode) {
+					const agentAction = orderedModes.find(a => a.id === getOpenChatActionIdForMode(agentMode));
+					if (agentAction) {
+						agentAction.keybinding = agentKeybinding;
+					}
+				}
 				return orderedModes;
 			}
 		};
@@ -290,6 +307,10 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 	override render(container: HTMLElement): void {
 		super.render(container);
 		container.classList.add('chat-mode-picker-item');
+		this._register(autorun(reader => {
+			const mode = this.delegate.currentMode.read(reader);
+			container.classList.toggle('chat-mode-plan-active', mode.id === ChatMode.Plan.id);
+		}));
 	}
 
 	protected override renderLabel(element: HTMLElement): IDisposable | null {
@@ -305,13 +326,12 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 		}
 
 		const labelElements = [];
-		const collapsed = this.pickerOptions.compact.get();
 		if (icon) {
 			labelElements.push(...renderLabelWithIcons(`$(${icon.id})`));
 		}
-		if (!collapsed || !icon) {
-			labelElements.push(dom.$('span.chat-input-picker-label', undefined, state));
-		}
+		// Cursor-style: always show the mode name (Agent, Plan, …) beside the icon.
+		labelElements.push(dom.$('span.chat-input-picker-label', undefined, state));
+		labelElements.push(dom.$('span.codicon.codicon-chevron-down'));
 
 		dom.reset(element, ...labelElements);
 		return null;

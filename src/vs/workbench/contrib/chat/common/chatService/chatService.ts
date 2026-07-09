@@ -1289,6 +1289,18 @@ export interface IChatPlanReviewResult {
  * link to edit the backing plan file, a dropdown of approval actions, a reject
  * button and an optional feedback textarea.
  */
+/**
+ * Cursor-style "Created Plan" card shown after a plan is saved to the workspace.
+ */
+export interface IChatCreatedPlan {
+	kind: 'createdPlan';
+	title: string;
+	overview: string;
+	planUri: UriComponents;
+	built?: boolean;
+	source?: ToolDataSource;
+}
+
 export interface IChatPlanReview {
 	kind: 'planReview';
 	/** Title to display in the widget header. */
@@ -1367,6 +1379,7 @@ export type IChatProgress =
 	| IChatConfirmation
 	| IChatQuestionCarousel
 	| IChatPlanReview
+	| IChatCreatedPlan
 	| IChatClearToPreviousToolInvocation
 	| IChatToolInvocation
 	| IChatToolInvocationSerialized

@@ -231,6 +231,7 @@
     "gulp-sourcemaps": "^3.0.0",
     "gulp-svgmin": "^4.1.0",
     "husky": "^0.13.1",
+    "imagetracerjs": "1.2.6",
     "innosetup": "^6.4.1",
     "istanbul-lib-coverage": "^3.2.0",
     "istanbul-lib-instrument": "^6.0.1",
@@ -260,6 +261,7 @@
     "tslib": "^2.6.3",
     "typescript": "^6.0.0-dev.20260416",
     "typescript-eslint": "^8.45.0",
+    "upng-js": "2.1.0",
     "util": "^0.12.4",
     "xml2js": "^0.5.0",
     "yaserver": "^0.4.0"

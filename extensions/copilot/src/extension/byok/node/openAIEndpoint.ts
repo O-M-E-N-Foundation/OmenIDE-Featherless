@@ -16,7 +16,16 @@ import { RawMessageConversionCallback } from '../../../platform/networking/commo
 import { IChatWebSocketManager } from '../../../platform/networking/node/chatWebSocketManager';
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { ITokenizerProvider } from '../../../platform/tokenizer/node/tokenizer';
+import { timeout } from '../../../util/vs/base/common/async';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
+import {
+	featherlessConcurrencyGate,
+	getFeatherlessConcurrencyCost,
+	isFeatherlessConcurrencyLimitError,
+	isFeatherlessEndpoint,
+	parseFeatherlessRetryAfterSeconds,
+} from '../../omenide/common/featherlessConcurrencyGate';
+import { OmenIDEConfig, OmenIDEDefaults } from '../../omenide/common/omenideConfig';
 
 function hydrateBYOKErrorMessages(response: ChatResponse): ChatResponse {
 	if (response.type === ChatFetchResponseType.Failed && response.streamError) {
@@ -27,15 +36,19 @@ function hydrateBYOKErrorMessages(response: ChatResponse): ChatResponse {
 			reason: JSON.stringify(response.streamError),
 		};
 	} else if (response.type === ChatFetchResponseType.RateLimited) {
+		const capiError = response.capiError;
+		const friendlyReason = capiError?.code === 'concurrency_limit_exceeded'
+			? 'Concurrency limit exceeded'
+			: (capiError?.message ?? 'Rate limit exceeded');
 		return {
 			type: response.type,
 			requestId: response.requestId,
 			serverRequestId: response.serverRequestId,
-			reason: response.capiError ? 'Rate limit exceeded\n\n' + JSON.stringify(response.capiError) : 'Rate limit exceeded',
-			rateLimitKey: '',
-			retryAfter: undefined,
-			isAuto: false,
-			capiError: response.capiError
+			reason: friendlyReason,
+			rateLimitKey: response.rateLimitKey ?? '',
+			retryAfter: response.retryAfter ?? (capiError?.code === 'concurrency_limit_exceeded' ? 5 : undefined),
+			isAuto: response.isAuto ?? false,
+			capiError,
 		};
 	}
 	return response;
@@ -415,7 +428,44 @@ export class OpenAIEndpoint extends ChatEndpoint {
 	public override async makeChatRequest2(options: IMakeChatRequestOptions, token: CancellationToken): Promise<ChatResponse> {
 		// Use ignoreStatefulMarker: false as the initial request default; the parent retry flow can override it on InvalidStatefulMarker retries.
 		const modifiedOptions: IMakeChatRequestOptions = { ...options, ignoreStatefulMarker: options.ignoreStatefulMarker ?? false };
-		const response = await super.makeChatRequest2(modifiedOptions, token);
-		return hydrateBYOKErrorMessages(response);
+
+		if (!isFeatherlessEndpoint(this._modelUrl)) {
+			const response = await super.makeChatRequest2(modifiedOptions, token);
+			return hydrateBYOKErrorMessages(response);
+		}
+
+		const limit = this._configurationService.getNonExtensionConfig<number>(OmenIDEConfig.FeatherlessConcurrencyLimit) ?? OmenIDEDefaults.concurrencyLimit;
+		const maxRetries = this._configurationService.getNonExtensionConfig<number>(OmenIDEConfig.FeatherlessConcurrencyMaxRetries) ?? OmenIDEDefaults.concurrencyMaxRetries;
+		const units = getFeatherlessConcurrencyCost(this.model);
+		let attempt = 0;
+
+		while (true) {
+			if (token.isCancellationRequested) {
+				return {
+					type: ChatFetchResponseType.Canceled,
+					reason: 'Cancelled',
+					requestId: '',
+					serverRequestId: undefined,
+				};
+			}
+
+			attempt++;
+			await featherlessConcurrencyGate.acquire(units, limit, token);
+			try {
+				const response = await super.makeChatRequest2(modifiedOptions, token);
+				const hydrated = hydrateBYOKErrorMessages(response);
+
+				if (isFeatherlessConcurrencyLimitError(hydrated) && attempt < maxRetries) {
+					const retryAfterSec = parseFeatherlessRetryAfterSeconds(hydrated) ?? Math.min(30, 2 * attempt);
+					this.logService.info(`[Featherless] Concurrency limit hit for ${this.model}, retrying in ${retryAfterSec}s (attempt ${attempt}/${maxRetries})`);
+					await timeout(retryAfterSec * 1000, token);
+					continue;
+				}
+
+				return hydrated;
+			} finally {
+				featherlessConcurrencyGate.release(units, limit);
+			}
+		}
 	}
 }

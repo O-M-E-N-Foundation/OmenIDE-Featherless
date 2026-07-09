@@ -203,6 +203,12 @@ function getRateLimitMessage(fetchResult: ChatFetchError, copilotPlan: string | 
 		throw new Error('Expected RateLimited error');
 	}
 	const retryAfterString = fetchResult.retryAfter ? secondsToHumanReadableTime(fetchResult.retryAfter) : 'a moment';
+	if (fetchResult.capiError?.code === 'concurrency_limit_exceeded') {
+		return l10n.t({
+			message: 'All Featherless request slots are in use. This request is queued and will retry automatically — please wait {0}.',
+			args: [retryAfterString],
+		});
+	}
 	if (fetchResult.capiError?.code?.startsWith('agent_mode_limit_exceeded')) { // Rate limited in agent mode
 		return l10n.t({
 			message: 'Sorry, you have exceeded the agent mode rate limit. Please switch to ask mode and try again in {0}. [Learn More]({1})',

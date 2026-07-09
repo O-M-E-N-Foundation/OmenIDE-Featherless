@@ -148,6 +148,7 @@ import { ChatEditorInput, ChatEditorInputSerializer } from './widgetHosts/editor
 import { ChatLayoutService } from './widget/chatLayoutService.js';
 import { ChatLanguageModelsDataContribution, LanguageModelsConfigurationService } from './languageModelsConfigurationService.js';
 import './chatManagement/chatManagement.contribution.js';
+import './omenSettings/omenSettings.contribution.js';
 import './aiCustomization/aiCustomizationWorkspaceService.js';
 import './aiCustomization/customizationHarnessService.js';
 import './aiCustomization/aiCustomizationManagement.contribution.js';
@@ -195,8 +196,11 @@ import './promptSyntax/promptToolsCodeLensProvider.js';
 import './promptSyntax/promptToolSetsCodeLensProvider.js';
 import { ChatSessionOptionSlashCommandsContribution, ChatSlashCommandsContribution } from './chatSlashCommands.js';
 import './planReviewFeedback/planReviewFeedbackEditorContribution.js';
+import './planEditor/planEditor.contribution.js';
 import { registerPlanReviewFeedbackEditorActions } from './planReviewFeedback/planReviewFeedbackEditorActions.js';
 import { IPlanReviewFeedbackService, PlanReviewFeedbackService } from './planReviewFeedback/planReviewFeedbackService.js';
+import { IWorkspacePlanService, WorkspacePlanService } from '../common/plan/workspacePlanService.js';
+import { IPlanBuildService, PlanBuildService } from './plan/planBuildService.js';
 import { PluginUrlHandler } from './pluginUrlHandler.js';
 import { PromptUrlHandler } from './promptSyntax/promptUrlHandler.js';
 import { ConfigureToolSets, UserToolSetsContributions } from './tools/toolSetsContribution.js';
@@ -485,6 +489,23 @@ configurationRegistry.registerConfiguration({
 			markdownDescription: nls.localize('chat.planReview.inlineEditor.enabled', "When enabled, the plan review widget mounts an editor inline, as opposed to in a separate editor tab."),
 			default: true,
 		},
+		[ChatConfiguration.OmenPlanBuildSwitchTimeoutSeconds]: {
+			type: 'number',
+			description: nls.localize('omen.plan.buildSwitchTimeoutSeconds', "Seconds to wait before automatically switching to Agent mode when building a plan."),
+			default: 30,
+			minimum: 5,
+			maximum: 120,
+		},
+		[ChatConfiguration.OmenPlanOpenPreviewByDefault]: {
+			type: 'boolean',
+			description: nls.localize('omen.plan.openPreviewByDefault', "Open plan files in Markdown preview by default."),
+			default: true,
+		},
+		[ChatConfiguration.OmenPlanDefaultBuildModel]: {
+			type: 'string',
+			description: nls.localize('omen.plan.defaultBuildModel', "Optional default model ID used when building a plan. Leave empty to use the current chat model."),
+			default: '',
+		},
 		[ChatConfiguration.DefaultPermissionLevel]: {
 			type: 'string',
 			enum: [ChatPermissionLevel.Default, ChatPermissionLevel.AutoApprove, ChatPermissionLevel.Autopilot],
@@ -529,7 +550,7 @@ configurationRegistry.registerConfiguration({
 					type: 'string',
 					enum: [ChatPermissionLevel.Default, ChatPermissionLevel.AutoApprove],
 					enumDescriptions: [
-						nls.localize('chat.defaultConfiguration.approvals.default', "Default Approvals — Copilot uses your configured settings."),
+						nls.localize('chat.defaultConfiguration.approvals.default', "Default Approvals — The agent uses your configured settings."),
 						nls.localize('chat.defaultConfiguration.approvals.autoApprove', "Bypass Approvals — all tool calls are auto-approved."),
 					],
 					default: ChatPermissionLevel.Default,
@@ -700,7 +721,8 @@ configurationRegistry.registerConfiguration({
 		},
 		[ChatConfiguration.ArtifactsRulesByFilePath]: {
 			default: {
-				'**/*plan*.md': { groupName: 'Plans' }
+				'**/*plan*.md': { groupName: 'Plans' },
+				'**/.omen/plans/**/*.plan.md': { groupName: 'Plans' }
 			},
 			description: nls.localize('chat.artifacts.rules.byFilePath', "Rules for extracting artifacts from written files by file path pattern. Maps glob patterns to group configuration."),
 			type: 'object',
@@ -2636,6 +2658,8 @@ registerSingleton(IChatTodoListService, ChatTodoListService, InstantiationType.D
 registerSingleton(IChatArtifactsService, ChatArtifactsService, InstantiationType.Delayed);
 registerSingleton(IChatOutputRendererService, ChatOutputRendererService, InstantiationType.Delayed);
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
+registerSingleton(IWorkspacePlanService, WorkspacePlanService, InstantiationType.Delayed);
+registerSingleton(IPlanBuildService, PlanBuildService, InstantiationType.Delayed);
 registerSingleton(IPlanReviewFeedbackService, PlanReviewFeedbackService, InstantiationType.Delayed);
 registerSingleton(IChatTipService, ChatTipService, InstantiationType.Delayed);
 registerSingleton(IChatDebugService, ChatDebugServiceImpl, InstantiationType.Delayed);

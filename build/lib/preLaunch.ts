@@ -51,7 +51,18 @@ async function isExpectedElectronInstalled(): Promise<boolean> {
 		const { getElectronVersion } = await import('./util.ts');
 		const { electronVersion } = getElectronVersion();
 		const installedVersion = (await fs.readFile(path.join(rootDir, '.build', 'electron', 'version'), 'utf8')).trim().replace(/^v/, '');
-		return installedVersion === electronVersion;
+		if (installedVersion !== electronVersion) {
+			return false;
+		}
+
+		// Re-embed the Windows app icon when branding assets change.
+		const product = JSON.parse(await fs.readFile(path.join(rootDir, 'product.json'), 'utf8')) as { nameShort?: string };
+		const electronExe = path.join(rootDir, '.build', 'electron', `${product.nameShort ?? 'Code - OSS'}.exe`);
+		const [iconStat, electronStat] = await Promise.all([
+			fs.stat(path.join(rootDir, 'resources', 'omen', 'app-icon.svg')),
+			fs.stat(electronExe),
+		]);
+		return iconStat.mtimeMs <= electronStat.mtimeMs;
 	} catch {
 		return false;
 	}

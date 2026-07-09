@@ -7,6 +7,8 @@ export const OmenIDEConfig = {
 	FeatherlessEmbeddingModel: 'omenide.featherless.embeddingModel',
 	FeatherlessCompletionModel: 'omenide.featherless.completionModel',
 	AutocompleteEnabled: 'omenide.featherless.autocomplete.enabled',
+	FeatherlessConcurrencyLimit: 'omenide.featherless.concurrencyLimit',
+	FeatherlessConcurrencyMaxRetries: 'omenide.featherless.concurrencyMaxRetries',
 } as const;
 
 export const OmenIDEDefaults = {
@@ -15,6 +17,8 @@ export const OmenIDEDefaults = {
 	completionModel: 'Etherll/Qwen2.5-CodeFIM-1.5B-v2',
 	featherlessBaseUrl: 'https://api.featherless.ai/v1',
 	autocompleteEnabled: true,
+	concurrencyLimit: 8,
+	concurrencyMaxRetries: 12,
 } as const;
 
 export const OmenIDEEmbeddingTypeId = 'featherless-qwen3-embedding-8b';

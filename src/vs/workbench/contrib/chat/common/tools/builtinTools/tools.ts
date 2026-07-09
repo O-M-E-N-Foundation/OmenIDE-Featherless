@@ -14,6 +14,7 @@ import { ConfirmationTool, ConfirmationToolData, ConfirmationToolWithOptionsData
 import { EditTool, EditToolData } from './editFileTool.js';
 import { createManageTodoListToolData, ManageTodoListTool } from './manageTodoListTool.js';
 import { ReviewPlanTool, ReviewPlanToolData } from './reviewPlanTool.js';
+import { SavePlanTool, SavePlanToolData } from './savePlanTool.js';
 import { RunSubagentTool } from './runSubagentTool.js';
 import { SetArtifactsTool, SetArtifactsToolData } from './setArtifactsTool.js';
 import { SetArtifactRulesTool, SetArtifactRulesToolData } from './setArtifactRulesTool.js';
@@ -39,6 +40,10 @@ export class BuiltinToolsContribution extends Disposable implements IWorkbenchCo
 
 		const reviewPlanTool = this._register(instantiationService.createInstance(ReviewPlanTool));
 		this._register(toolsService.registerTool(ReviewPlanToolData, reviewPlanTool));
+
+		const savePlanTool = this._register(instantiationService.createInstance(SavePlanTool));
+		this._register(toolsService.registerTool(SavePlanToolData, savePlanTool));
+		this._register(toolsService.vscodeToolSet.addTool(SavePlanToolData));
 
 		const todoToolData = createManageTodoListToolData();
 		const manageTodoListTool = this._register(instantiationService.createInstance(ManageTodoListTool));

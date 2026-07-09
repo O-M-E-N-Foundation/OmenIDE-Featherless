@@ -168,7 +168,7 @@ suite('AgentHostPermissionPickerDelegate', () => {
 
 		assert.strictEqual(
 			delegate.getPermissionLevelHover(ChatPermissionLevel.AutoApprove, getPermissionLevelMeta(ChatPermissionLevel.AutoApprove)),
-			'Copilot runs all tools without asking for approval.'
+			'The agent runs all tools without asking for approval.'
 		);
 	});
 

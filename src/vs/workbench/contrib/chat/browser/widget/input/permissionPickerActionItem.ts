@@ -117,7 +117,7 @@ function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionLevelMet
 				id: 'chat.permissions.default',
 				label: localize('permissions.default', "Default Approvals"),
 				shortLabel: localize('permissions.default.label', "Default Approvals"),
-				detail: localize('permissions.default.subtext', "Copilot uses your configured settings"),
+				detail: localize('permissions.default.subtext', "The agent uses your configured settings"),
 				icon: ThemeIcon.fromId(Codicon.shield.id),
 				description: localize('permissions.default.description', "Use configured approval settings"),
 				elevated: false,
@@ -315,6 +315,7 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 		const labelElements = [];
 		labelElements.push(...renderLabelWithIcons(`$(${icon.id})`));
 		labelElements.push(dom.$('span.chat-input-picker-label', undefined, label));
+		labelElements.push(dom.$('span.codicon.codicon-chevron-down'));
 
 		dom.reset(element, ...labelElements);
 		element.classList.toggle('warning', !ext && level === ChatPermissionLevel.Autopilot);
@@ -333,6 +334,11 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 			this._hover.value = this.hoverService.setupDelayedHover(element, () => ({ content: this._currentTooltip }));
 		}
 		return null;
+	}
+
+	override render(container: HTMLElement): void {
+		super.render(container);
+		container.classList.add('chat-permission-picker-item');
 	}
 
 	public refresh(): void {

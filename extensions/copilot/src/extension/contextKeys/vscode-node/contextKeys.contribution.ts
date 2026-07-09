@@ -5,7 +5,7 @@
 import { commands, extensions, window } from 'vscode';
 import { IAuthenticationService, MinimalModeError } from '../../../platform/authentication/common/authentication';
 import { TokenErrorReason } from '../../../platform/authentication/common/copilotToken';
-import { ContactSupportError, EnterpriseManagedError, GitHubLoginFailedError, InvalidTokenError, NotSignedUpError, RateLimitedError, SubscriptionExpiredError } from '../../../platform/authentication/vscode-node/copilotTokenManager';
+import { ContactSupportError, EnterpriseManagedError, GitHubLoginFailedError, InvalidTokenError, NotSignedUpError, SubscriptionExpiredError } from '../../../platform/authentication/vscode-node/copilotTokenManager';
 import { SESSION_LOGIN_MESSAGE } from '../../../platform/authentication/vscode-node/session';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
@@ -163,13 +163,8 @@ export class ContextKeysContribution extends Disposable {
 		} else if (error instanceof GitHubLoginFailedError) {
 			key = welcomeViewContextKeys.GitHubLoginFailed;
 		} else if (error) {
-			if (!extensions.getExtension(EXTENSION_ID)?.isActive) {
-				if (error instanceof RateLimitedError) {
-					key = welcomeViewContextKeys.RateLimited;
-				} else {
-					key = welcomeViewContextKeys.Offline;
-				}
-			}
+			// OmenIDE: Copilot token failures are expected in Featherless-only mode.
+			// Do not set GitHub error welcome views — they race chat setup and show "Please try again."
 			this._scheduleOfflineCheck();
 		}
 

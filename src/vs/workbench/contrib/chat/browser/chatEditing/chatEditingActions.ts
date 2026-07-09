@@ -196,9 +196,9 @@ export class ChatEditingAcceptAllAction extends EditingSessionAction {
 	constructor() {
 		super({
 			id: 'chatEditing.acceptAllFiles',
-			title: localize('accept', 'Keep'),
+			title: localize('accept', 'Keep All'),
 			icon: Codicon.check,
-			tooltip: localize('acceptAllEdits', 'Keep All Edits'),
+			tooltip: localize('acceptAllEdits', 'Keep All'),
 			precondition: hasUndecidedChatEditingResourceContextKey,
 			keybinding: {
 				primary: KeyMod.CtrlCmd | KeyCode.Enter,
@@ -228,9 +228,9 @@ export class ChatEditingDiscardAllAction extends EditingSessionAction {
 	constructor() {
 		super({
 			id: 'chatEditing.discardAllFiles',
-			title: localize('discard', 'Undo'),
+			title: localize('discard', 'Undo All'),
 			icon: Codicon.discard,
-			tooltip: localize('discardAllEdits', 'Undo All Edits'),
+			tooltip: localize('discardAllEdits', 'Undo All'),
 			precondition: hasUndecidedChatEditingResourceContextKey,
 			menu: [
 				{
@@ -311,7 +311,7 @@ export async function discardAllEditsWithConfirmation(accessor: ServicesAccessor
 
 export class ChatEditingShowChangesAction extends EditingSessionAction {
 	static readonly ID = 'chatEditing.viewChanges';
-	static readonly LABEL = localize('chatEditing.viewChanges', 'View All Edits');
+	static readonly LABEL = localize('chatEditing.viewChanges', 'Review');
 
 	constructor() {
 		super({

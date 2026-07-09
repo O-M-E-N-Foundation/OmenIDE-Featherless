@@ -316,7 +316,7 @@ export const platformSessionSchema = createSchema({
 			localize('agentHost.sessionConfig.autoApprove.bypass', "Bypass Approvals"),
 		],
 		enumDescriptions: [
-			localize('agentHost.sessionConfig.autoApprove.defaultDescription', "Copilot uses your configured settings"),
+			localize('agentHost.sessionConfig.autoApprove.defaultDescription', "The agent uses your configured settings"),
 			localize('agentHost.sessionConfig.autoApprove.bypassDescription', "All tool calls are auto-approved"),
 		],
 		default: 'default',

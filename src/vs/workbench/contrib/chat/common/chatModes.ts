@@ -296,19 +296,16 @@ class ChatModes extends Disposable implements IChatModes {
 	}
 
 	private getBuiltinModes(): IChatMode[] {
-		const builtinModes: IChatMode[] = [
-			ChatMode.Ask,
-		];
+		const modes: IChatMode[] = [];
 
-		// Include Agent mode if:
-		// - It's enabled (hasToolsAgent is true), OR
+		// Include agent-family modes if:
+		// - Agent is enabled (hasToolsAgent is true), OR
 		// - It's disabled by policy (so we can show it with a lock icon)
-		// But hide it if the user manually disabled it via settings
 		if (this.chatAgentService.hasToolsAgent || this.isAgentModeDisabledByPolicy()) {
-			builtinModes.unshift(ChatMode.Agent);
+			modes.push(ChatMode.Agent, ChatMode.Plan, ChatMode.Debug);
 		}
-		builtinModes.push(ChatMode.Edit);
-		return builtinModes;
+		modes.push(ChatMode.Ask);
+		return modes;
 	}
 
 	private getCustomModes(): IChatMode[] {
@@ -707,16 +704,93 @@ export class BuiltinChatMode implements IChatMode {
 	}
 }
 
+/**
+ * Built-in agent mode with a fixed instruction body (Plan, Debug, …). Uses
+ * {@link ChatModeKind.Agent} so tooling stays enabled while the body steers
+ * behavior.
+ */
+export class BuiltinInstructionChatMode implements IChatMode {
+	public readonly id: string;
+	public readonly name: IObservable<string>;
+	public readonly label: IObservable<string>;
+	public readonly description: IObservable<string | undefined>;
+	public readonly icon: IObservable<ThemeIcon>;
+	public readonly target: IObservable<Target>;
+	public readonly kind = ChatModeKind.Agent;
+	public readonly isBuiltin = true;
+
+	private readonly _modeInstructions: ISettableObservable<IChatModeInstructions>;
+	private readonly _argumentHintObservable: IObservable<string | undefined>;
+
+	constructor(
+		id: string,
+		label: string,
+		description: string,
+		icon: ThemeIcon,
+		instructions: string,
+		argumentHint?: string,
+	) {
+		this.id = id;
+		this.name = constObservable(id);
+		this.label = constObservable(label);
+		this.description = observableValue('description', description);
+		this.icon = constObservable(icon);
+		this.target = constObservable(Target.Undefined);
+		this._modeInstructions = observableValue('_modeInstructions', { content: instructions, toolReferences: [] });
+		this._argumentHintObservable = argumentHint ? constObservable(argumentHint) : constObservable(undefined);
+	}
+
+	get modeInstructions(): IObservable<IChatModeInstructions> {
+		return this._modeInstructions;
+	}
+
+	get argumentHint(): IObservable<string | undefined> {
+		return this._argumentHintObservable;
+	}
+
+	toJSON(): IChatModeData {
+		return {
+			id: this.id,
+			name: this.name.get(),
+			description: this.description.get(),
+			kind: this.kind,
+			modeInstructions: this._modeInstructions.get(),
+		};
+	}
+}
+
 export namespace ChatMode {
-	export const Ask = new BuiltinChatMode(ChatModeKind.Ask, 'Ask', localize('chatDescription', "Explore and understand your code"), Codicon.question);
+	export const Ask = new BuiltinChatMode(ChatModeKind.Ask, 'Ask', localize('chatDescription', "Explore and understand your code"), Codicon.ask);
 	export const Edit = new BuiltinChatMode(ChatModeKind.Edit, 'Edit', localize('editsDescription', "Edit or refactor selected code"), Codicon.edit);
 	export const Agent = new BuiltinChatMode(ChatModeKind.Agent, 'Agent', localize('agentDescription', "Describe what to build"), Codicon.agent);
+
+	const planInstructions = localize('planModeInstructions', "You are in Plan mode. Research the codebase with read-only tools, ask clarifying questions, and produce a detailed actionable plan.\n\nWorkflow:\n1. Explore with read/search tools only — do not edit files or run mutating terminal commands.\n2. When the plan is ready, call #tool:vscode_savePlan with `title`, full markdown `content`, and a short `overview` (1-3 sentences for the chat card).\n3. Do NOT call #tool:vscode_reviewPlan unless explicitly asked to get approval for a risky change.\n4. Wait for the user to click Build or refine the plan based on feedback.");
+	const debugInstructions = localize('debugModeInstructions', "You are in Debug mode. Reproduce the issue, gather runtime evidence, form hypotheses, and iterate toward a root cause before applying a fix. Prefer minimal, targeted changes and explain what you learned.");
+
+	export const Plan = new BuiltinInstructionChatMode(
+		'plan',
+		'Plan',
+		localize('planModeDescription', "Create a step-by-step plan"),
+		Codicon.tasklist,
+		planInstructions,
+		localize('planModeArgumentHint', "Describe what you want to plan"),
+	);
+	export const Debug = new BuiltinInstructionChatMode(
+		'debug',
+		'Debug',
+		localize('debugModeDescription', "Diagnose and fix issues systematically"),
+		Codicon.debug,
+		debugInstructions,
+		localize('debugModeArgumentHint', "Describe the bug or unexpected behavior"),
+	);
 }
 
 export function isBuiltinChatMode(mode: IChatMode): boolean {
 	return mode.id === ChatMode.Ask.id ||
 		mode.id === ChatMode.Edit.id ||
-		mode.id === ChatMode.Agent.id;
+		mode.id === ChatMode.Agent.id ||
+		mode.id === ChatMode.Plan.id ||
+		mode.id === ChatMode.Debug.id;
 }
 
 /**
