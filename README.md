@@ -1,7 +1,7 @@
 # Omen IDE
 
 <p align="center">
-  <img alt="Omen IDE" src="./resources/omen/app-icon.svg" width="256">
+  <img alt="Omen IDE" src="./resources/omen/app-icon.png" width="256">
 </p>
 
 <p align="center">
