@@ -136,9 +136,10 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 	}
 
 	const prUrl = String(finished.pr_url);
+	await gh.setIssueLabels(env, issue.number, ['in-review']);
 	await gh.commentOnIssue(
 		env,
 		issue.number,
-		`### Omen implement\n\n${String(finished.message || 'Implementation PR opened.')}\n\nPR: ${prUrl}\n\nCodeRabbit + security CI will run next; merge is automatic when clean. QA is post-merge.`,
+		`### Omen implement\n\n${String(finished.message || 'Implementation PR opened.')}\n\nPR: ${prUrl}\n\nLabeled \`in-review\`. CodeRabbit + security CI will run next; merge is automatic when clean. QA is post-merge.`,
 	);
 }

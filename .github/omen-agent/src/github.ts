@@ -274,6 +274,40 @@ export function codeRabbitApproved(review: { state: PullReviewState | null } | n
 	return Boolean(review && review.state === 'APPROVED');
 }
 
+export async function listClosingIssueNumbers(env: AgentEnv, prNumber: number): Promise<number[]> {
+	const query = `
+		query($owner:String!, $repo:String!, $number:Int!) {
+			repository(owner:$owner, name:$repo) {
+				pullRequest(number:$number) {
+					closingIssuesReferences(first:20) {
+						nodes { number }
+					}
+				}
+			}
+		}`;
+	const data = await gh<{
+		data?: {
+			repository?: {
+				pullRequest?: {
+					closingIssuesReferences?: { nodes: Array<{ number: number }> };
+				};
+			};
+		};
+		errors?: Array<{ message: string }>;
+	}>(env, '/graphql', {
+		method: 'POST',
+		body: JSON.stringify({
+			query,
+			variables: { owner: env.owner, repo: env.repo, number: prNumber },
+		}),
+	});
+	if (data.errors?.length) {
+		console.warn(`closingIssuesReferences: ${data.errors.map(e => e.message).join('; ')}`);
+		return [];
+	}
+	return (data.data?.repository?.pullRequest?.closingIssuesReferences?.nodes ?? []).map(n => n.number);
+}
+
 export async function listOpenAiPulls(env: AgentEnv) {
 	const pulls = await gh<Array<{
 		number: number;

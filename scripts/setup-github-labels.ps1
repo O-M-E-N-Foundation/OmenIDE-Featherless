@@ -14,6 +14,7 @@ $ErrorActionPreference = "Stop"
 $labels = @(
 	@{ name = "ready-for-ai"; color = "2ecc71"; description = "Approved to implement, review, and auto-merge" }
 	@{ name = "ai-in-flight"; color = "3498db"; description = "Omen agent is currently working this issue" }
+	@{ name = "in-review"; color = "8e44ad"; description = "AI PR open: CodeRabbit / address-review / CI until merge" }
 	@{ name = "ai-authored"; color = "9b59b6"; description = "PR produced by the Omen Featherless agent" }
 	@{ name = "needs-human"; color = "e74c3c"; description = "Blocked for a human (spec, security, exhausted AI loops)" }
 	@{ name = "triage:needs-info"; color = "f39c12"; description = "Triage found incomplete acceptance criteria" }
