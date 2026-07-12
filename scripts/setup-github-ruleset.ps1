@@ -6,7 +6,7 @@
 .DESCRIPTION
   Requires: gh auth login with admin on O-M-E-N-Foundation/OmenIDE-Featherless
 
-  Required checks: CodeQL, secret-scan, pr-hygiene
+  Required checks: CodeQL, secret-scan, pr-hygiene, omen-typecheck
   Pull request rules: 1 approving review (CodeRabbit APPROVE when clean) + resolved threads
   omen-review-clean is enforced by omen-auto-merge for ai-authored PRs only (not a branch ruleset check, so human PRs are not blocked by that check alone).
 #>
@@ -56,7 +56,8 @@ $payload = @"
         "required_status_checks": [
           { "context": "CodeQL" },
           { "context": "secret-scan" },
-          { "context": "pr-hygiene" }
+          { "context": "pr-hygiene" },
+          { "context": "omen-typecheck" }
         ]
       }
     }

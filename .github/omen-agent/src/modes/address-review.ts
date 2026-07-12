@@ -57,6 +57,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 
 	const unresolvedAtStart = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
 	const startSha = pr.head.sha;
+	const typecheckFailure = await gh.getTypecheckFailureSummary(env, startSha);
 	const { issueComments, reviewComments } = await gh.listPullComments(env, pr.number);
 	const rabbitComments = [
 		...issueComments.filter(c => gh.isCodeRabbitLogin(c.user.login)),
@@ -64,7 +65,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 	];
 	const rabbitReview = await gh.getLatestCodeRabbitReview(env, pr.number);
 
-	if (!unresolvedAtStart.length && !rabbitComments.length) {
+	if (!unresolvedAtStart.length && !rabbitComments.length && !typecheckFailure) {
 		await gh.createCheckRun(env, {
 			name: 'omen-review-clean',
 			headSha: pr.head.sha,
@@ -75,19 +76,19 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 		return;
 	}
 
-	if (!unresolvedAtStart.length && gh.codeRabbitApproved(rabbitReview)) {
+	if (!unresolvedAtStart.length && !typecheckFailure && gh.codeRabbitApproved(rabbitReview)) {
 		await gh.createCheckRun(env, {
 			name: 'omen-review-clean',
 			headSha: pr.head.sha,
 			conclusion: 'success',
 			title: 'CodeRabbit approved',
-			summary: 'No unresolved CodeRabbit threads; latest CodeRabbit review is APPROVED.',
+			summary: 'No unresolved CodeRabbit threads; typecheck clean; latest CodeRabbit review is APPROVED.',
 		});
 		return;
 	}
 
 	// Threads open (or CHANGES_REQUESTED / COMMENTED without approval) → agent must edit.
-	if (!unresolvedAtStart.length && rabbitReview && !gh.codeRabbitApproved(rabbitReview)) {
+	if (!unresolvedAtStart.length && !typecheckFailure && rabbitReview && !gh.codeRabbitApproved(rabbitReview)) {
 		console.log(`No open threads but CodeRabbit state is ${rabbitReview.state}; waiting for APPROVE`);
 		await gh.createCheckRun(env, {
 			name: 'omen-review-clean',
@@ -139,15 +140,20 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			`Review round: ${round}/${env.maxReviewRounds}`,
 			`Latest CodeRabbit review state: ${rabbitReview?.state ?? '(none)'}`,
 			`Unresolved CodeRabbit threads: ${unresolvedAtStart.length}`,
+			`omen-typecheck failing: ${typecheckFailure ? 'yes' : 'no'}`,
 			'',
 			'HARD RULES:',
 			'- You MUST call write_file or edit_file for each valid finding before finishing.',
 			'- Explore-only runs are a FAILURE. Do not finish without code edits + git push.',
+			'- Client must typecheck: after edits run `npm run typecheck-client` (npm ci first if needed) and fix all TS errors before finish.',
 			`- Checkout: git fetch origin ${pr.head.ref} && git checkout ${pr.head.ref}`,
 			'- Push to that branch only (never main).',
 			'- After fixing, put thread_id values in finish_address_review.resolved_thread_ids.',
-			'- clean=true only when every unresolved CodeRabbit thread is fixed.',
+			'- clean=true only when every unresolved CodeRabbit thread is fixed AND typecheck is clean.',
 			'',
+			typecheckFailure
+				? ['## COMPILE / TYPECHECK FAILURES (must fix)', typecheckFailure, ''].join('\n')
+				: '',
 			'CodeRabbit unresolved feedback:',
 			feedback || '(none)',
 		].join('\n'),
@@ -197,13 +203,17 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 	const remaining = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
 	const refreshedReview = await gh.getLatestCodeRabbitReview(env, pr.number);
 	const refreshed = await gh.getPull(env, pr.number);
+	const typecheckStillFailing = await gh.getTypecheckFailureSummary(env, refreshed.head.sha);
 	const pushedFixes = refreshed.head.sha !== startSha;
 	const wroteAnything = Boolean(ctx.wroteAnything);
 
-	// Never trust agent clean=true while CodeRabbit threads remain open.
-	let clean = Boolean(finished?.clean) && remaining.length === 0 && (wroteAnything || pushedFixes || unresolvedAtStart.length === 0);
+	// Never trust agent clean=true while CodeRabbit threads remain open or typecheck is red.
+	let clean = Boolean(finished?.clean) && remaining.length === 0 && !typecheckStillFailing && (wroteAnything || pushedFixes || (unresolvedAtStart.length === 0 && !typecheckFailure));
 	if (Boolean(finished?.clean) && remaining.length > 0) {
 		console.warn(`Agent claimed clean=true but ${remaining.length} CodeRabbit thread(s) remain unresolved`);
+	}
+	if (Boolean(finished?.clean) && typecheckStillFailing) {
+		console.warn('Agent claimed clean=true but omen-typecheck is still failing');
 	}
 	if (clean && !gh.codeRabbitApproved(refreshedReview)) {
 		clean = false;
@@ -221,41 +231,54 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			`- Wrote files this run: **${wroteAnything ? 'yes' : 'no'}**`,
 			`- Pushed new commits: **${pushedFixes ? 'yes' : 'no'}**`,
 			`- Unresolved CodeRabbit threads remaining: **${remaining.length}**`,
+			`- omen-typecheck: **${typecheckStillFailing ? 'FAILING' : 'ok/pending'}**`,
 			`- Latest CodeRabbit review: **${refreshedReview?.state ?? '(none)'}**`,
-			`- omen-review-clean: **${clean ? 'success' : remaining.length || unresolvedAtStart.length ? 'failed' : 'pending'}**`,
+			`- omen-review-clean: **${clean ? 'success' : remaining.length || typecheckStillFailing || unresolvedAtStart.length || typecheckFailure ? 'failed' : 'pending'}**`,
 		].join('\n'),
 	);
 
 	await gh.createCheckRun(env, {
 		name: 'omen-review-clean',
 		headSha: refreshed.head.sha,
-		conclusion: clean ? 'success' : remaining.length || (unresolvedAtStart.length > 0 && !pushedFixes) ? 'failure' : 'neutral',
+		conclusion: clean
+			? 'success'
+			: remaining.length || typecheckStillFailing || (unresolvedAtStart.length > 0 && !pushedFixes) || (Boolean(typecheckFailure) && !pushedFixes)
+				? 'failure'
+				: 'neutral',
 		title: clean
 			? 'CodeRabbit approved + threads clear'
-			: !wroteAnything && !pushedFixes && unresolvedAtStart.length > 0
-				? 'Address-review explore-only (no edits)'
-				: remaining.length
-					? `${remaining.length} CodeRabbit thread(s) still open`
-					: 'Waiting for CodeRabbit approval',
+			: typecheckStillFailing
+				? 'omen-typecheck still failing'
+				: !wroteAnything && !pushedFixes && (unresolvedAtStart.length > 0 || Boolean(typecheckFailure))
+					? 'Address-review explore-only (no edits)'
+					: remaining.length
+						? `${remaining.length} CodeRabbit thread(s) still open`
+						: 'Waiting for CodeRabbit approval',
 		summary: [
 			String(finished?.message || ''),
 			'',
 			`Wrote files: ${wroteAnything}`,
 			`Pushed commits: ${pushedFixes}`,
 			`Unresolved threads: ${remaining.length}`,
+			`Typecheck failing: ${Boolean(typecheckStillFailing)}`,
 			`CodeRabbit review state: ${refreshedReview?.state ?? '(none)'}`,
 		].join('\n'),
 	});
 
 	// Fail the job so schedule / monitors retry — never exit green while work remains.
-	if (unresolvedAtStart.length > 0 && !wroteAnything && !pushedFixes) {
+	if ((unresolvedAtStart.length > 0 || typecheckFailure) && !wroteAnything && !pushedFixes) {
 		throw new Error(
-			`Address-review explore-only failure on PR #${pr.number}: ${unresolvedAtStart.length} open CodeRabbit thread(s), no write_file/edit_file and no new commits.`,
+			`Address-review explore-only failure on PR #${pr.number}: open review/typecheck work remained, no write_file/edit_file and no new commits.`,
 		);
 	}
 	if (remaining.length > 0) {
 		throw new Error(
 			`Address-review incomplete on PR #${pr.number}: ${remaining.length} CodeRabbit thread(s) still unresolved after round ${round}.`,
+		);
+	}
+	if (typecheckStillFailing) {
+		throw new Error(
+			`Address-review incomplete on PR #${pr.number}: omen-typecheck still failing after round ${round}.`,
 		);
 	}
 }

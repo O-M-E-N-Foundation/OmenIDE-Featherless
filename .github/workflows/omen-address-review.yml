@@ -7,6 +7,8 @@ on:
     types: [created]
   pull_request_review:
     types: [submitted]
+  check_run:
+    types: [completed]
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
@@ -33,14 +35,18 @@ jobs:
     timeout-minutes: 60
     # Job-level so skipped issue_comment events do not cancel real address-review runs.
     concurrency:
-      group: omen-address-${{ inputs.pr_number || github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      group: omen-address-${{ inputs.pr_number || github.event.pull_request.number || github.event.issue.number || github.event.check_run.pull_requests[0].number || github.run_id }}
       cancel-in-progress: true
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.user.login, 'coderabbit')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.user.login, 'coderabbit')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.user.login, 'coderabbit'))
+      (github.event_name == 'pull_request_review' && contains(github.event.review.user.login, 'coderabbit')) ||
+      (github.event_name == 'check_run' &&
+       github.event.check_run.name == 'omen-typecheck' &&
+       github.event.check_run.conclusion == 'failure' &&
+       github.event.check_run.pull_requests[0] != null)
     steps:
       - name: Resolve PR number
         id: pr
@@ -54,6 +60,8 @@ jobs:
               prNumber = context.payload.pull_request.number;
             } else if (context.eventName === 'issue_comment' && context.payload.issue.pull_request) {
               prNumber = context.payload.issue.number;
+            } else if (context.eventName === 'check_run') {
+              prNumber = context.payload.check_run.pull_requests?.[0]?.number ?? null;
             }
             core.setOutput('number', prNumber ? String(prNumber) : '');
             core.setOutput('round', context.payload.inputs?.review_round || '1');

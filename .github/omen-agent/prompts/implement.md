@@ -12,8 +12,10 @@ The issue was labeled `ready-for-ai` by a Write collaborator. That label **is pr
 - Follow any **Implementation plan** comment on the issue first. Do not rediscover the whole repo.
 - Within the first ~10–15 tool calls, start `write_file` / `edit_file`. Exploring forever is a failure.
 - Prefer reading only the files named in the plan (chat.shared.contribution.ts, sessionsSetUpService overlay pattern, featherless secrets/setup).
-- After code exists: `git` commit/push and `gh_create_pr`, then `finish_implement(status=ok, pr_url=...)`.
+- After code exists: run `npm run typecheck-client` (with `npm ci` if needed) and **fix all TypeScript errors** before committing.
+- Then `git` commit/push and `gh_create_pr`, then `finish_implement(status=ok, pr_url=...)`.
 - Ending the turn without tools, or without `finish_implement`, is a failure.
+- Shipping code that fails `omen-typecheck` is a failure — the merge gate will block and address-review will be forced to fix it.
 
 ## Hard rules
 - Never push to `main`.

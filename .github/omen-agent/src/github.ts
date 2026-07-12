@@ -128,8 +128,45 @@ export async function mergePull(env: AgentEnv, prNumber: number) {
 
 export async function listCheckRunsForRef(env: AgentEnv, ref: string) {
 	return gh<{
-		check_runs: Array<{ name: string; status: string; conclusion: string | null }>;
+		check_runs: Array<{
+			id: number;
+			name: string;
+			status: string;
+			conclusion: string | null;
+			output?: { title?: string; summary?: string; text?: string };
+		}>;
 	}>(env, `/repos/${env.owner}/${env.repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=100`);
+}
+
+export async function getCheckRunAnnotations(env: AgentEnv, checkRunId: number) {
+	return gh<Array<{
+		path: string;
+		start_line: number;
+		end_line: number;
+		message: string;
+		annotation_level: string;
+	}>>(env, `/repos/${env.owner}/${env.repo}/check-runs/${checkRunId}/annotations?per_page=50`);
+}
+
+/** Failing omen-typecheck / compile annotations for the PR head, if any. */
+export async function getTypecheckFailureSummary(env: AgentEnv, headSha: string): Promise<string | null> {
+	const { check_runs } = await listCheckRunsForRef(env, headSha);
+	const failed = [...check_runs]
+		.reverse()
+		.find(r => (r.name === 'omen-typecheck' || r.name.startsWith('omen-typecheck')) && r.conclusion === 'failure');
+	if (!failed) {
+		return null;
+	}
+	let details = failed.output?.summary || failed.output?.text || failed.output?.title || 'omen-typecheck failed';
+	try {
+		const anns = await getCheckRunAnnotations(env, failed.id);
+		if (anns.length) {
+			details += '\n\n' + anns.map(a => `${a.path}:${a.start_line}: ${a.message}`).join('\n');
+		}
+	} catch (err) {
+		console.warn('getCheckRunAnnotations failed:', err instanceof Error ? err.message : err);
+	}
+	return details.slice(0, 8000);
 }
 
 export async function createCheckRun(env: AgentEnv, input: {

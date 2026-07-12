@@ -80,7 +80,7 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 		overlay.setAttribute('aria-busy', 'true');
 		overlay.setAttribute('aria-label', localize('featherlessSplash.loading', "Loading Omen IDE"));
 
-		const mark = append(overlay, $('img.featherless-startup-splash-mark'));
+		const mark = append(overlay, $<HTMLImageElement>('img.featherless-startup-splash-mark'));
 		mark.alt = '';
 		try {
 			mark.src = FileAccess.asBrowserUri('resources/omen/app-icon.svg').toString(true);

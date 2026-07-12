@@ -7,10 +7,10 @@ This repository (`O-M-E-N-Foundation/OmenIDE-Featherless`) uses branch protectio
 - **No direct commits** to `main`. All changes go through pull requests.
 - Apply the ruleset with [`scripts/setup-github-ruleset.ps1`](../scripts/setup-github-ruleset.ps1) (org admin + `gh auth login`).
 - Required before merge:
-  - Status checks: `CodeQL`, `secret-scan`, `pr-hygiene`
+  - Status checks: `CodeQL`, `secret-scan`, `pr-hygiene`, **`omen-typecheck`** (client TypeScript)
   - **1 approving review** (CodeRabbit APPROVE when review is clean; humans can approve too)
   - **All review threads resolved**
-- For **`ai-authored` PRs**, auto-merge additionally requires a successful `omen-review-clean` check (agent verified CodeRabbit APPROVED + no open CodeRabbit threads). That check is **not** a branch ruleset requirement so human PRs are not blocked by it.
+- For **`ai-authored` PRs**, auto-merge additionally requires a successful `omen-review-clean` check (agent verified CodeRabbit APPROVED + no open CodeRabbit threads + typecheck not failing). That check is **not** a branch ruleset requirement so human PRs are not blocked by it.
 
 ## Labels
 
@@ -58,9 +58,10 @@ Issue opened -> Featherless triage (comment + triage labels)
 Write collaborator adds ready-for-ai
   -> implement (branch + PR labeled ai-authored; issue labeled in-review)
   -> CodeRabbit review (REQUEST_CHANGES while findings remain)
-  -> Featherless address-review (fix + resolve threads; debounce concurrent comments)
+  -> `omen-typecheck` (client TS) — failures re-trigger address-review
+  -> Featherless address-review (fix CodeRabbit + compile errors; debounce concurrent comments)
   -> CodeRabbit re-review **APPROVE**
-  -> omen-review-clean + security CI green
+  -> omen-review-clean + security CI + omen-typecheck green
   -> auto squash-merge to `main`
 ```
 
@@ -77,6 +78,7 @@ Full microsoft/vscode OSS PR CI (**Code OSS** Electron/Browser/Remote, node_modu
 - `CodeQL`
 - `secret-scan` (Gitleaks; requires `GITLEAKS_LICENSE` secret)
 - `pr-hygiene`
+- **`omen-typecheck`** — `npm run typecheck-client`; required to merge; failing runs re-trigger address-review for `ai-authored` PRs
 - CodeRabbit + `omen-address-review` → CodeRabbit **APPROVE** + resolved threads → `omen-review-clean`
 - Monaco Editor checks / telemetry metadata (lightweight, GitHub-hosted)
 
@@ -125,6 +127,7 @@ Report vulnerabilities privately per [SECURITY.md](../SECURITY.md). Do not file 
 | `ready-for-ai-gate.yml` | Enforce Write-only `ready-for-ai` |
 | `omen-triage.yml` | Featherless issue triage |
 | `omen-implement.yml` | Implement ready issues |
-| `omen-address-review.yml` | Fix CodeRabbit feedback; emit `omen-review-clean` |
+| `omen-address-review.yml` | Fix CodeRabbit feedback + typecheck failures; emit `omen-review-clean` |
+| `omen-typecheck.yml` | Client TypeScript gate (`omen-typecheck`) |
 | `omen-auto-merge.yml` | Squash-merge when gates pass |
 | `codeql.yml` / `secret-scan.yml` / `pr-hygiene.yml` | Security gates |

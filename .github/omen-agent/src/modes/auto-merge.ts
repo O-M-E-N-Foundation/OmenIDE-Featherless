@@ -6,7 +6,7 @@
 import type { AgentEnv } from '../config.ts';
 import * as gh from '../github.ts';
 
-const REQUIRED_CHECKS = ['CodeQL', 'secret-scan', 'pr-hygiene', 'omen-review-clean'];
+const REQUIRED_CHECKS = ['CodeQL', 'secret-scan', 'pr-hygiene', 'omen-typecheck', 'omen-review-clean'];
 
 function checkOk(runs: Array<{ name: string; status: string; conclusion: string | null }>, name: string): boolean {
 	const matches = runs.filter(r => r.name === name || r.name.startsWith(name));
