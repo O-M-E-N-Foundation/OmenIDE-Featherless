@@ -1,10 +1,9 @@
 name: Code OSS
 
+# OMEN: Disabled on this fork — requires Microsoft 1ES self-hosted runners.
+# Re-enable only if Omen hosts compatible runners. Manual runs: Actions → Code OSS → Run workflow.
 on:
-  pull_request:
-    branches:
-      - main
-      - 'release/*'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

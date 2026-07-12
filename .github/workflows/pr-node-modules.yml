@@ -1,9 +1,8 @@
 name: Code OSS (node_modules)
 
+# OMEN: Disabled on this fork — requires Microsoft 1ES self-hosted runners.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions: {}
 
