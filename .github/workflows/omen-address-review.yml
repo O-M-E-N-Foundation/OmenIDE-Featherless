@@ -97,6 +97,22 @@ jobs:
         with:
           token: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          ref: main
+
+      # Critical: PR branches lag main. Run the harness from main in a temp dir so
+      # check-token / thread-gate fixes apply without committing agent code into the PR.
+      - name: Stage omen-agent from main
+        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+        id: agent
+        shell: bash
+        run: |
+          git fetch origin main
+          AGENT_DIR="${RUNNER_TEMP}/omen-agent"
+          rm -rf "$AGENT_DIR"
+          mkdir -p "$AGENT_DIR"
+          git archive origin/main .github/omen-agent | tar -x -C "$AGENT_DIR"
+          echo "dir=${AGENT_DIR}/.github/omen-agent" >> "$GITHUB_OUTPUT"
+          echo "omen-agent staged from main @ $(git rev-parse origin/main)"
 
       - name: Setup Node
         if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
@@ -125,7 +141,7 @@ jobs:
 
       - name: Address CodeRabbit feedback
         if: steps.pr.outputs.number != '' && env.skip != '1'
-        working-directory: .github/omen-agent
+        working-directory: ${{ steps.agent.outputs.dir }}
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -141,7 +157,7 @@ jobs:
 
       - name: Sweep open AI PRs
         if: github.event_name == 'schedule'
-        working-directory: .github/omen-agent
+        working-directory: ${{ steps.agent.outputs.dir }}
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
