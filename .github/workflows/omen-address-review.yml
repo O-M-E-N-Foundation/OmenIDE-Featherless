@@ -27,10 +27,10 @@ permissions:
   pull-requests: write
   checks: write
 
-# Latest run wins. Debounce step below waits so a burst of CodeRabbit inline
-# comments collapses into one job instead of cancelling mid-fix.
+# Latest run wins per PR. Debounce step below waits so a burst of CodeRabbit
+# inline comments collapses into one job instead of cancelling mid-fix.
 concurrency:
-  group: omen-address-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || 'sweep' }}
+  group: omen-address-${{ inputs.pr_number || github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
