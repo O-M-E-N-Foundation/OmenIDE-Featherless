@@ -19,6 +19,8 @@ export type FinishPayload = Record<string, unknown>;
 export interface ToolContext {
 	env: AgentEnv;
 	finished?: FinishPayload;
+	/** True if write_file / edit_file / gh_create_pr ran during this loop. */
+	wroteAnything?: boolean;
 }
 
 function truncate(text: string, max = 12000): string {

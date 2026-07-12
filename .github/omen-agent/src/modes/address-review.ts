@@ -52,10 +52,11 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			title: 'Review fix rounds exhausted',
 			summary: exhausted.blocker,
 		});
-		return;
+		throw new Error(exhausted.blocker);
 	}
 
-	const unresolved = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
+	const unresolvedAtStart = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
+	const startSha = pr.head.sha;
 	const { issueComments, reviewComments } = await gh.listPullComments(env, pr.number);
 	const rabbitComments = [
 		...issueComments.filter(c => gh.isCodeRabbitLogin(c.user.login)),
@@ -63,7 +64,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 	];
 	const rabbitReview = await gh.getLatestCodeRabbitReview(env, pr.number);
 
-	if (!unresolved.length && !rabbitComments.length) {
+	if (!unresolvedAtStart.length && !rabbitComments.length) {
 		await gh.createCheckRun(env, {
 			name: 'omen-review-clean',
 			headSha: pr.head.sha,
@@ -74,7 +75,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 		return;
 	}
 
-	if (!unresolved.length && gh.codeRabbitApproved(rabbitReview)) {
+	if (!unresolvedAtStart.length && gh.codeRabbitApproved(rabbitReview)) {
 		await gh.createCheckRun(env, {
 			name: 'omen-review-clean',
 			headSha: pr.head.sha,
@@ -85,8 +86,21 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 		return;
 	}
 
-	const feedback = unresolved.length
-		? formatThreads(unresolved)
+	// Threads open (or CHANGES_REQUESTED / COMMENTED without approval) → agent must edit.
+	if (!unresolvedAtStart.length && rabbitReview && !gh.codeRabbitApproved(rabbitReview)) {
+		console.log(`No open threads but CodeRabbit state is ${rabbitReview.state}; waiting for APPROVE`);
+		await gh.createCheckRun(env, {
+			name: 'omen-review-clean',
+			headSha: pr.head.sha,
+			conclusion: 'neutral',
+			title: `Waiting for CodeRabbit APPROVED (got ${rabbitReview.state})`,
+			summary: 'Threads clear; CodeRabbit has not approved yet.',
+		});
+		return;
+	}
+
+	const feedback = unresolvedAtStart.length
+		? formatThreads(unresolvedAtStart)
 		: rabbitComments
 			.slice(-20)
 			.map(c => {
@@ -116,6 +130,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 		env,
 		systemPromptName: 'address-review',
 		requireFinish: true,
+		finishToolName: 'finish_address_review',
 		userPrompt: [
 			`PR #${pr.number}: ${pr.title}`,
 			`Branch: ${pr.head.ref}`,
@@ -123,19 +138,18 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			`URL: ${pr.html_url}`,
 			`Review round: ${round}/${env.maxReviewRounds}`,
 			`Latest CodeRabbit review state: ${rabbitReview?.state ?? '(none)'}`,
-			`Unresolved CodeRabbit threads: ${unresolved.length}`,
+			`Unresolved CodeRabbit threads: ${unresolvedAtStart.length}`,
 			'',
-			'You MUST checkout this PR branch before editing:',
-			`  git fetch origin ${pr.head.ref} && git checkout ${pr.head.ref}`,
-			'Push fixes to that branch only (never main).',
-			'',
-			'After fixing each thread, include its thread_id in finish_address_review.resolved_thread_ids.',
-			'Only set clean=true when every unresolved CodeRabbit thread is fixed (or obsolete).',
+			'HARD RULES:',
+			'- You MUST call write_file or edit_file for each valid finding before finishing.',
+			'- Explore-only runs are a FAILURE. Do not finish without code edits + git push.',
+			`- Checkout: git fetch origin ${pr.head.ref} && git checkout ${pr.head.ref}`,
+			'- Push to that branch only (never main).',
+			'- After fixing, put thread_id values in finish_address_review.resolved_thread_ids.',
+			'- clean=true only when every unresolved CodeRabbit thread is fixed.',
 			'',
 			'CodeRabbit unresolved feedback:',
 			feedback || '(none)',
-			'',
-			'Checkout the PR branch, fix issues, commit, push, then finish_address_review.',
 		].join('\n'),
 		tools,
 	});
@@ -164,7 +178,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 				title: 'Needs human',
 				summary: String(finished.blocker || finished.message || 'Agent requested human help'),
 			});
-			return;
+			throw new Error(String(finished.blocker || 'needs-human'));
 		}
 	}
 
@@ -183,13 +197,14 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 	const remaining = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
 	const refreshedReview = await gh.getLatestCodeRabbitReview(env, pr.number);
 	const refreshed = await gh.getPull(env, pr.number);
+	const pushedFixes = refreshed.head.sha !== startSha;
+	const wroteAnything = Boolean(ctx.wroteAnything);
 
 	// Never trust agent clean=true while CodeRabbit threads remain open.
-	let clean = Boolean(finished?.clean) && remaining.length === 0;
+	let clean = Boolean(finished?.clean) && remaining.length === 0 && (wroteAnything || pushedFixes || unresolvedAtStart.length === 0);
 	if (Boolean(finished?.clean) && remaining.length > 0) {
 		console.warn(`Agent claimed clean=true but ${remaining.length} CodeRabbit thread(s) remain unresolved`);
 	}
-	// After fixes, CodeRabbit must re-approve. Until then, stay neutral (not merge-ready).
 	if (clean && !gh.codeRabbitApproved(refreshedReview)) {
 		clean = false;
 		console.log('Fixes applied / threads cleared; waiting for CodeRabbit APPROVED review');
@@ -201,28 +216,46 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 		[
 			`### Omen address-review (round ${round})`,
 			'',
-			String(finished?.message || (clean ? 'Review feedback addressed.' : 'Partial fixes pushed; waiting for CodeRabbit.')),
+			String(finished?.message || (clean ? 'Review feedback addressed.' : 'Address-review round finished.')),
 			'',
+			`- Wrote files this run: **${wroteAnything ? 'yes' : 'no'}**`,
+			`- Pushed new commits: **${pushedFixes ? 'yes' : 'no'}**`,
 			`- Unresolved CodeRabbit threads remaining: **${remaining.length}**`,
 			`- Latest CodeRabbit review: **${refreshedReview?.state ?? '(none)'}**`,
-			`- omen-review-clean: **${clean ? 'success' : 'pending'}**`,
+			`- omen-review-clean: **${clean ? 'success' : remaining.length || unresolvedAtStart.length ? 'failed' : 'pending'}**`,
 		].join('\n'),
 	);
 
 	await gh.createCheckRun(env, {
 		name: 'omen-review-clean',
 		headSha: refreshed.head.sha,
-		conclusion: clean ? 'success' : remaining.length ? 'neutral' : 'neutral',
+		conclusion: clean ? 'success' : remaining.length || (unresolvedAtStart.length > 0 && !pushedFixes) ? 'failure' : 'neutral',
 		title: clean
 			? 'CodeRabbit approved + threads clear'
-			: remaining.length
-				? `${remaining.length} CodeRabbit thread(s) still open`
-				: 'Waiting for CodeRabbit approval',
+			: !wroteAnything && !pushedFixes && unresolvedAtStart.length > 0
+				? 'Address-review explore-only (no edits)'
+				: remaining.length
+					? `${remaining.length} CodeRabbit thread(s) still open`
+					: 'Waiting for CodeRabbit approval',
 		summary: [
 			String(finished?.message || ''),
 			'',
+			`Wrote files: ${wroteAnything}`,
+			`Pushed commits: ${pushedFixes}`,
 			`Unresolved threads: ${remaining.length}`,
 			`CodeRabbit review state: ${refreshedReview?.state ?? '(none)'}`,
 		].join('\n'),
 	});
+
+	// Fail the job so schedule / monitors retry — never exit green while work remains.
+	if (unresolvedAtStart.length > 0 && !wroteAnything && !pushedFixes) {
+		throw new Error(
+			`Address-review explore-only failure on PR #${pr.number}: ${unresolvedAtStart.length} open CodeRabbit thread(s), no write_file/edit_file and no new commits.`,
+		);
+	}
+	if (remaining.length > 0) {
+		throw new Error(
+			`Address-review incomplete on PR #${pr.number}: ${remaining.length} CodeRabbit thread(s) still unresolved after round ${round}.`,
+		);
+	}
 }
