@@ -33,7 +33,7 @@ import {
 	FEATHERLESS_EXTENSION_LIST_MODELS_COMMAND,
 	FEATHERLESS_EXTENSION_SIGN_OUT_COMMAND,
 } from '../../../../services/chat/common/featherless.js';
-import { getFeatherlessApiKeySecretStorageKey, getFeatherlessOAuthSecretStorageKey } from '../../../../services/chat/common/featherlessSecrets.js';
+import { isFeatherlessCredentialSecretKey } from '../../../../services/chat/common/featherlessSecrets.js';
 import {
 	CONTEXT_OMEN_SETTINGS_EDITOR,
 	IOmenFeatherlessAccountSummary,
@@ -146,7 +146,7 @@ export class OmenSettingsEditor extends EditorPane {
 		this.inOmenSettingsEditorContextKey = CONTEXT_OMEN_SETTINGS_EDITOR.bindTo(contextKeyService);
 
 		this._register(this.secretStorageService.onDidChangeSecret(e => {
-			if (e === getFeatherlessApiKeySecretStorageKey() || e === getFeatherlessOAuthSecretStorageKey()) {
+			if (isFeatherlessCredentialSecretKey(e)) {
 				void this.refreshAccountSummary(true);
 			}
 		}));

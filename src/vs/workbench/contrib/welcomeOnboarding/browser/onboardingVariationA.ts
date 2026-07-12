@@ -87,19 +87,18 @@ type OnboardingActionEvent = {
 
 type EnterpriseSignInUiState = 'options' | 'instance' | 'progress';
 
+import {
+	FEATHERLESS_API_KEY_SECRET,
+	OMENIDE_CHAT_EXTENSION_ID,
+	getExtensionSecretStorageKey,
+	readFeatherlessCredentialSecrets,
+} from '../../../services/chat/common/featherlessSecrets.js';
+
 assertDefined(product.defaultChatAgent, 'Onboarding requires a default chat agent product configuration.');
 const defaultChat = product.defaultChatAgent;
 
 /** Extension id for the in-tree Copilot/Featherless extension (`extensions/copilot`). */
-const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier('OmenIDE.omenide-chat');
-/** Secret key used by BYOKStorageService for the Featherless provider API key. */
-const FEATHERLESS_API_KEY_SECRET = 'copilot-byok-Featherless-api-key';
-/** Secret key used by FeatherlessAuthService for OAuth access tokens. */
-const FEATHERLESS_OAUTH_ACCESS_TOKEN_SECRET = 'copilot-byok-Featherless-oauth-access-token';
-
-function getExtensionSecretStorageKey(extensionId: string, key: string): string {
-	return JSON.stringify({ extensionId, key });
-}
+const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier(OMENIDE_CHAT_EXTENSION_ID);
 
 /**
  * Variation A — Classic Wizard Modal
@@ -398,17 +397,13 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	}
 
 	private async _readFeatherlessOAuthFromStorage(): Promise<boolean> {
-		const value = await this.secretStorageService.get(
-			getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_OAUTH_ACCESS_TOKEN_SECRET),
-		);
-		return !!value?.trim();
+		const { oauthToken } = await readFeatherlessCredentialSecrets(this.secretStorageService);
+		return !!oauthToken;
 	}
 
 	private async _readFeatherlessApiKeyFromStorage(): Promise<string | undefined> {
-		const value = await this.secretStorageService.get(
-			getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_API_KEY_SECRET),
-		);
-		return value?.trim() || undefined;
+		const { apiKey } = await readFeatherlessCredentialSecrets(this.secretStorageService);
+		return apiKey;
 	}
 
 	private async _refreshFeatherlessApiKeyState(): Promise<boolean> {

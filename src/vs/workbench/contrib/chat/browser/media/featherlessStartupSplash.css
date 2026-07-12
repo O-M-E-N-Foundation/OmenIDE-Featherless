@@ -1,24 +1,23 @@
-/* ---------------------------------------------------------------------------------------------
+/*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
- * -------------------------------------------------------------------------------------------- */
+ *--------------------------------------------------------------------------------------------*/
 
 /* ---- Full-page startup splash overlay ----
  * Covers the workbench until Featherless credential resolution + chat/models
  * are ready (or a safety timeout / error occurs). z-index is kept below the
  * onboarding overlay (10000) so the connect/auth UI can appear on top.
+ *
+ * The live progress bar is absolutely positioned over the recessed track in
+ * splash.png (see SPLASH_PROGRESS_SLOT in the contribution).
  */
 
 .featherless-startup-splash {
 	position: absolute;
 	inset: 0;
 	z-index: 9000;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 28px;
-	background: var(--vscode-editor-background);
+	overflow: hidden;
+	background: #0a0c10;
 	transition: opacity 220ms ease-out;
 }
 
@@ -27,50 +26,78 @@
 	pointer-events: none;
 }
 
-.featherless-startup-splash .featherless-startup-splash-mark {
-	width: 128px;
-	height: 128px;
+.featherless-startup-splash .featherless-startup-splash-bg {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	object-position: center;
+	user-select: none;
+	-webkit-user-drag: none;
+	pointer-events: none;
+}
+
+.featherless-startup-splash .featherless-startup-splash-content {
+	position: absolute;
+	z-index: 2;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: 18px 22px 16px;
+	text-align: center;
+	border-radius: 14px;
+	background: rgba(0, 0, 0, 0.72);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+	backdrop-filter: blur(10px);
+	box-sizing: border-box;
+}
+
+.featherless-startup-splash .featherless-startup-splash-logo {
+	width: 56px;
+	height: 56px;
+	object-fit: contain;
 	user-select: none;
 	-webkit-user-drag: none;
 }
 
 .featherless-startup-splash .featherless-startup-splash-title {
-	font-size: 22px;
+	font-size: 20px;
 	font-weight: 600;
-	color: var(--vscode-foreground);
+	color: #f3f6f8;
 	letter-spacing: 0.3px;
 }
 
 .featherless-startup-splash .featherless-startup-splash-status {
 	font-size: 13px;
-	color: var(--vscode-descriptionForeground);
+	color: rgba(220, 230, 235, 0.82);
 	min-height: 18px;
 }
 
 .featherless-startup-splash .featherless-startup-splash-progress {
-	width: 220px;
-	height: 4px;
-	border-radius: 2px;
-	background: var(--vscode-editorWidget-background);
+	position: absolute;
+	z-index: 2;
+	box-sizing: border-box;
 	overflow: hidden;
+	border-radius: 3px;
+	/* Opaque track covers the baked-in partial fill in splash.png */
+	background: rgba(4, 10, 12, 0.94);
+	border: 1px solid rgba(72, 150, 140, 0.45);
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
 }
 
 .featherless-startup-splash .featherless-startup-splash-progress-bar {
 	display: block;
 	height: 100%;
-	width: 40%;
-	border-radius: 2px;
-	background: var(--vscode-focusBorder);
-	animation: featherless-startup-splash-slide 1.1s ease-in-out infinite;
-}
-
-@keyframes featherless-startup-splash-slide {
-	0%   { transform: translateX(-100%); }
-	100% { transform: translateX(350%); }
+	width: 0%;
+	border-radius: inherit;
+	background: linear-gradient(90deg, #1f7a58 0%, #63dc9f 55%, #8af0c0 100%);
+	box-shadow: 0 0 10px rgba(99, 220, 159, 0.45);
+	transition: width 220ms ease-out;
 }
 
 .monaco-reduce-motion .featherless-startup-splash .featherless-startup-splash-progress-bar {
-	animation: none;
-	width: 100%;
-	opacity: 0.6;
+	transition: none;
 }
