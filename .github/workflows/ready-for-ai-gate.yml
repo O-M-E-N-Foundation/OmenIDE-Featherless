@@ -1,0 +1,47 @@
+name: Ready-for-AI gate
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  gate:
+    if: github.event.label.name == 'ready-for-ai'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce Write+ and block security issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const actor = context.payload.sender.login;
+            const label = context.payload.label.name;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = issue.number;
+
+            const labels = (issue.labels || []).map(l => l.name);
+            if (labels.includes('security')) {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name: 'ready-for-ai' });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `Removed \`ready-for-ai\`: issues labeled \`security\` are never auto-implemented or auto-merged. Handle this issue manually.`
+              });
+              return;
+            }
+
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner, repo, username: actor
+            });
+            const allowed = ['admin', 'maintain', 'write'].includes(perm.permission);
+            if (!allowed) {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name: 'ready-for-ai' });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `@${actor} removed \`ready-for-ai\`: only collaborators with **Write** (or higher) may apply this label. See [docs/github-governance.md](https://github.com/${owner}/${repo}/blob/main/docs/github-governance.md).`
+              });
+            }

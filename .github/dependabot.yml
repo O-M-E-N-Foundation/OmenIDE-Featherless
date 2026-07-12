@@ -8,3 +8,17 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    ignore:
+      # Native/electron stacks are upgraded deliberately with VS Code upstream.
+      - dependency-name: "electron"
+      - dependency-name: "@vscode/deviceid"
+      - dependency-name: "@vscode/sqlite3"
+  - package-ecosystem: "npm"
+    directory: "/.github/omen-agent"
+    schedule:
+      interval: "weekly"

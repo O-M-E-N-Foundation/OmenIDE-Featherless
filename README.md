@@ -119,7 +119,8 @@ We periodically merge upstream VS Code releases. Bug fixes and features that bel
 ## Contributing
 
 - **Issues & feature requests:** [github.com/O-M-E-N-Foundation/vscode/issues](https://github.com/O-M-E-N-Foundation/vscode/issues)
-- **Pull requests:** welcome against `main`; please keep changes focused and include a short description of *why* the change is needed.
+- **Pull requests:** required for all changes to `main` (no direct pushes). Keep PRs focused and explain *why*.
+- **`ready-for-ai`:** Write collaborators may label an issue to approve autonomous implement → CodeRabbit → auto-merge. That label **is** the ship decision; QA is post-merge. See [docs/github-governance.md](docs/github-governance.md).
 
 For large changes (new AI providers, architectural refactors), open an issue first so we can align on direction.
 

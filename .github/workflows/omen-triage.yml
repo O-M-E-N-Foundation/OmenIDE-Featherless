@@ -1,0 +1,62 @@
+name: Omen triage
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  schedule:
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to triage
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: omen-triage-${{ github.event.issue.number || github.event.inputs.issue_number || 'cron' }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'issues' && !contains(join(github.event.issue.labels.*.name, ','), 'security'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Resolve issue number
+        id: issue
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "issues" ]; then
+            echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Triage with Featherless
+        if: steps.issue.outputs.number != ''
+        working-directory: .github/omen-agent
+        env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+          OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          OMEN_ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          OMEN_AGENT_MODEL: ${{ vars.OMEN_AGENT_MODEL }}
+        run: node --experimental-strip-types src/index.ts triage

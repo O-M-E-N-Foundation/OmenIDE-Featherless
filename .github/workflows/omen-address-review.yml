@@ -1,0 +1,125 @@
+name: Omen address review
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number
+        required: true
+        type: string
+      review_round:
+        description: Review round number
+        required: false
+        default: '1'
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: omen-address-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || 'sweep' }}
+  cancel-in-progress: true
+
+jobs:
+  address:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.user.login, 'coderabbit')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.user.login, 'coderabbit')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.user.login, 'coderabbit'))
+    steps:
+      - name: Resolve PR number
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let prNumber = null;
+            if (context.eventName === 'workflow_dispatch') {
+              prNumber = context.payload.inputs.pr_number;
+            } else if (context.eventName === 'pull_request_review_comment' || context.eventName === 'pull_request_review') {
+              prNumber = context.payload.pull_request.number;
+            } else if (context.eventName === 'issue_comment' && context.payload.issue.pull_request) {
+              prNumber = context.payload.issue.number;
+            }
+            core.setOutput('number', prNumber ? String(prNumber) : '');
+            core.setOutput('round', context.payload.inputs?.review_round || '1');
+
+      - name: Checkout
+        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Configure git
+        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+        run: |
+          git config user.name "Omen Agent"
+          git config user.email "omen-agent[bot]@users.noreply.github.com"
+
+      - name: Ensure PR is ai-authored
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          LABELS=$(gh api "repos/${{ github.repository }}/issues/${{ steps.pr.outputs.number }}" --jq '[.labels[].name] | join(",")')
+          echo "Labels: $LABELS"
+          if ! echo "$LABELS" | grep -q 'ai-authored'; then
+            echo "Not ai-authored; skipping"
+            echo "skip=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Address CodeRabbit feedback
+        if: steps.pr.outputs.number != '' && env.skip != '1'
+        working-directory: .github/omen-agent
+        env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+          OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          OMEN_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          OMEN_REVIEW_ROUND: ${{ steps.pr.outputs.round }}
+          OMEN_AGENT_MODEL: ${{ vars.OMEN_AGENT_MODEL }}
+          OMEN_MAX_REVIEW_ROUNDS: ${{ vars.OMEN_MAX_REVIEW_ROUNDS }}
+        run: node --experimental-strip-types src/index.ts address-review
+
+      - name: Sweep open AI PRs
+        if: github.event_name == 'schedule'
+        working-directory: .github/omen-agent
+        env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+          OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          OMEN_AGENT_MODEL: ${{ vars.OMEN_AGENT_MODEL }}
+          OMEN_MAX_REVIEW_ROUNDS: ${{ vars.OMEN_MAX_REVIEW_ROUNDS }}
+        run: |
+          mapfile -t PRS < <(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=30" --jq '.[] | select(any(.labels[]; .name=="ai-authored")) | .number')
+          for n in "${PRS[@]:-}"; do
+            [ -z "$n" ] && continue
+            echo "Addressing PR #$n"
+            OMEN_PR_NUMBER="$n" OMEN_REVIEW_ROUND=1 node --experimental-strip-types src/index.ts address-review || true
+          done

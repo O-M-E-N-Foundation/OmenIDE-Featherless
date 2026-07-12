@@ -1,14 +1,19 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
+about: Suggest an idea for Omen IDE
 title: ''
 labels: ''
 assignees: ''
 
 ---
 
-<!-- ⚠️⚠️ Do Not Delete This! feature_request_template ⚠️⚠️ -->
-<!-- Please read our Rules of Conduct: https://opensource.microsoft.com/codeofconduct/ -->
-<!-- Please search existing issues to avoid creating duplicates. -->
+<!-- Search existing issues first. -->
+<!-- Maintainers: add `ready-for-ai` only when acceptance criteria are clear enough to ship (Write+ only). See docs/github-governance.md -->
 
-<!-- Describe the feature you'd like. -->
+## Problem
+
+## Proposal
+
+## Acceptance criteria
+
+- [ ]

@@ -1,0 +1,55 @@
+name: PR hygiene
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  hygiene:
+    name: pr-hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan diff for secrets and unsafe patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          DIFF=$(git diff --name-only "$BASE...$HEAD" || true)
+          echo "Changed files:"
+          echo "$DIFF"
+
+          FAIL=0
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              .env|.env.*|**/.env|**/.env.*|*.pem|*.p12|*credentials*.json|*service-account*.json)
+                echo "::error file=$file::Refusing secret-like path in PR"
+                FAIL=1
+                ;;
+            esac
+          done <<< "$DIFF"
+
+          PATCH=$(git diff "$BASE...$HEAD" || true)
+          if echo "$PATCH" | grep -Eiq '^\+.*(FEATHERLESS_API_KEY|OPENAI_API_KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----)'; then
+            echo "::error::Diff appears to introduce a secret or private key literal"
+            FAIL=1
+          fi
+          if echo "$PATCH" | grep -Eiq '^\+.*--no-verify'; then
+            echo "::error::Diff introduces --no-verify (blocked)"
+            FAIL=1
+          fi
+
+          if [ "$FAIL" -ne 0 ]; then
+            exit 1
+          fi
+          echo "PR hygiene OK"

@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+    incremental_reviews: true
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/out/**"
+    - "!**/.build/**"
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/*.png"
+    - "!**/*.ico"
+    - "!**/*.icns"
+    - "!**/*.xpm"
+    - "!**/*.svg"
+    - "!**/resources/**/*.png"
+    - "!**/resources/**/*.ico"
+    - "!**/resources/**/*.icns"
+  path_instructions:
+    - path: "extensions/copilot/**"
+      instructions: |
+        Focus on Featherless/Omen BYOK safety: never commit API keys, OAuth client secrets,
+        or tokens. Prefer secret storage. Flag any hard-coded credentials or --no-verify usage.
+        Prefer small, reviewable changes.
+    - path: "src/vs/workbench/contrib/chat/**"
+      instructions: |
+        Chat/Omen settings changes must not weaken auth, entitlement, or secret handling.
+        Call out XSS risks in rendered HTML and missing dispose patterns for listeners.
+    - path: ".github/**"
+      instructions: |
+        Do not approve disabling security workflows, weakening required checks, or broadening
+        secrets exposure. Flag workflows that checkout untrusted code without isolation.
+    - path: "scripts/**"
+      instructions: |
+        Flag scripts that embed secrets, disable git hooks, or force-push to main.
+chat:
+  auto_reply: true

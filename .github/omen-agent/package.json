@@ -1,0 +1,18 @@
+{
+  "name": "omen-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Featherless-powered GitHub Actions agent for Omen IDE",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "triage": "node --experimental-strip-types src/index.ts triage",
+    "implement": "node --experimental-strip-types src/index.ts implement",
+    "address-review": "node --experimental-strip-types src/index.ts address-review",
+    "merge-ready": "node --experimental-strip-types src/index.ts merge-ready",
+    "auto-merge": "node --experimental-strip-types src/index.ts auto-merge"
+  }
+}

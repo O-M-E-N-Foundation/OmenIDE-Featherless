@@ -1,0 +1,91 @@
+name: Omen implement
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to implement
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: omen-implement-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.label.name == 'ready-for-ai')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Configure git
+        run: |
+          git config user.name "Omen Agent"
+          git config user.email "omen-agent[bot]@users.noreply.github.com"
+
+      - name: Resolve issue number
+        id: issue
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for ready-for-ai gate
+        id: gate
+        if: github.event_name == 'issues'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Gate workflow may remove the label; give it a moment then re-check.
+          sleep 15
+          LABELS=$(gh api "repos/${{ github.repository }}/issues/${{ steps.issue.outputs.number }}" --jq '[.labels[].name] | join(",")')
+          echo "Labels: $LABELS"
+          if echo "$LABELS" | grep -q 'security'; then
+            echo "Security issue — refusing implement"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! echo "$LABELS" | grep -q 'ready-for-ai' && ! echo "$LABELS" | grep -q 'ai-in-flight'; then
+            echo "ready-for-ai not present after gate; skipping"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=0" >> "$GITHUB_OUTPUT"
+
+      - name: Implement with Featherless
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.skip != '1'
+        working-directory: .github/omen-agent
+        env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+          OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          OMEN_ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          OMEN_AGENT_MODEL: ${{ vars.OMEN_AGENT_MODEL }}
+        run: node --experimental-strip-types src/index.ts implement
