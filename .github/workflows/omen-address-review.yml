@@ -27,8 +27,10 @@ permissions:
   pull-requests: write
   checks: write
 
+# Latest run wins per PR. Debounce step below waits so a burst of CodeRabbit
+# inline comments collapses into one job instead of cancelling mid-fix.
 concurrency:
-  group: omen-address-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || 'sweep' }}
+  group: omen-address-${{ inputs.pr_number || github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -58,8 +60,39 @@ jobs:
             core.setOutput('number', prNumber ? String(prNumber) : '');
             core.setOutput('round', context.payload.inputs?.review_round || '1');
 
-      - name: Checkout
-        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+      - name: Debounce CodeRabbit comment bursts
+        if: >
+          steps.pr.outputs.number != '' &&
+          (github.event_name == 'issue_comment' ||
+           github.event_name == 'pull_request_review_comment' ||
+           github.event_name == 'pull_request_review')
+        run: |
+          echo "Waiting 90s so concurrent CodeRabbit comments coalesce into one address-review run..."
+          sleep 90
+
+      - name: Resolve PR head
+        id: head
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          REF=$(gh api "repos/${{ github.repository }}/pulls/${{ steps.pr.outputs.number }}" --jq .head.ref)
+          SHA=$(gh api "repos/${{ github.repository }}/pulls/${{ steps.pr.outputs.number }}" --jq .head.sha)
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "PR head: $REF @ $SHA"
+
+      - name: Checkout PR branch
+        if: steps.pr.outputs.number != ''
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          ref: ${{ steps.head.outputs.ref }}
+
+      - name: Checkout (schedule sweep)
+        if: steps.pr.outputs.number == '' && github.event_name == 'schedule'
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -96,6 +129,7 @@ jobs:
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          OMEN_CHECKS_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -111,6 +145,7 @@ jobs:
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          OMEN_CHECKS_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -121,5 +156,8 @@ jobs:
           for n in "${PRS[@]:-}"; do
             [ -z "$n" ] && continue
             echo "Addressing PR #$n"
+            REF=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/$n" --jq .head.ref)
+            git fetch origin "$REF"
+            git checkout -B "$REF" "origin/$REF"
             OMEN_PR_NUMBER="$n" OMEN_REVIEW_ROUND=1 node --experimental-strip-types src/index.ts address-review || true
           done

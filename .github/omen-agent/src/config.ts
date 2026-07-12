@@ -12,6 +12,8 @@ export interface AgentEnv {
 	featherlessBaseUrl: string;
 	model: string;
 	githubToken: string;
+	/** Token used for check-runs (Actions GITHUB_TOKEN). Classic PATs often lack checks:write. */
+	checksGithubToken: string;
 	owner: string;
 	repo: string;
 	issueNumber?: number;
@@ -24,6 +26,7 @@ export interface AgentEnv {
 export function loadEnv(mode: AgentMode): AgentEnv {
 	const featherlessApiKey = process.env.FEATHERLESS_API_KEY ?? '';
 	const githubToken = process.env.OMEN_AGENT_GITHUB_TOKEN || process.env.GITHUB_TOKEN || '';
+	const checksGithubToken = process.env.OMEN_CHECKS_GITHUB_TOKEN || process.env.GITHUB_TOKEN || githubToken;
 	const repository = process.env.GITHUB_REPOSITORY ?? 'O-M-E-N-Foundation/vscode';
 	const [owner, repo] = repository.split('/');
 	if (!owner || !repo) {
@@ -40,6 +43,7 @@ export function loadEnv(mode: AgentMode): AgentEnv {
 		featherlessBaseUrl: process.env.FEATHERLESS_BASE_URL || 'https://api.featherless.ai/v1',
 		model: process.env.OMEN_AGENT_MODEL || 'zai-org/GLM-5.2',
 		githubToken,
+		checksGithubToken,
 		owner,
 		repo,
 		issueNumber: Number.isFinite(issueNumber) ? issueNumber : undefined,
