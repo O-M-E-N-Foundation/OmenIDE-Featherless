@@ -1,18 +1,18 @@
 name: Omen auto-merge
 
 on:
-  check_suite:
-    types: [completed]
-  check_run:
-    types: [completed]
+  # Prefer schedule + manual; avoid check_suite storms. Quote descriptions that contain colons.
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Optional PR number (default: all open ai-authored)
+        description: 'Optional PR number (default: all open ai-authored)'
         required: false
         type: string
+  # Re-check when required CI completes (filtered in job).
+  check_run:
+    types: [completed]
 
 permissions:
   contents: write
@@ -28,6 +28,11 @@ jobs:
   merge:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Skip noisy check_run events that are not our merge gates.
+    if: >
+      github.event_name != 'check_run' ||
+      contains(fromJSON('["CodeQL","secret-scan","pr-hygiene","omen-review-clean","CodeRabbit"]'), github.event.check_run.name) ||
+      startsWith(github.event.check_run.name, 'CodeQL')
     steps:
       - name: Checkout agent
         uses: actions/checkout@v4
@@ -45,5 +50,5 @@ jobs:
           OMEN_CHECKS_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          OMEN_PR_NUMBER: ${{ github.event.inputs.pr_number || '' }}
+          OMEN_PR_NUMBER: ${{ inputs.pr_number || '' }}
         run: node --experimental-strip-types src/index.ts auto-merge
