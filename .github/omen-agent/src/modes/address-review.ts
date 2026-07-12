@@ -6,6 +6,7 @@
 import type { AgentEnv } from '../config.ts';
 import { runAgentLoop } from '../agent-loop.ts';
 import * as gh from '../github.ts';
+import { formatNeedsHumanComment, isActionableNeedsHuman } from '../needs-human.ts';
 import { baseTools, finishTool } from '../tools.ts';
 
 export async function runAddressReview(env: AgentEnv): Promise<void> {
@@ -24,14 +25,23 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 
 	const round = Number(process.env.OMEN_REVIEW_ROUND || '1');
 	if (round > env.maxReviewRounds) {
+		const exhausted = {
+			blocker: `Exceeded max CodeRabbit fix rounds (${env.maxReviewRounds}).`,
+			questions: [
+				'Should we raise OMEN_MAX_REVIEW_ROUNDS and retry address-review? (recommended: yes, set to 5)',
+				'Or close this PR and open a narrower follow-up issue? (recommended: retry first)',
+			],
+			unblock_steps: 'Comment your choice, remove `needs-human`, then re-run the Omen address-review workflow (or push a commit to the PR).',
+			message: 'Review fix rounds exhausted.',
+		};
 		await gh.addPullLabels(env, pr.number, ['needs-human']);
-		await gh.commentOnIssue(env, pr.number, `Exceeded max CodeRabbit fix rounds (${env.maxReviewRounds}). Labeled needs-human.`);
+		await gh.commentOnIssue(env, pr.number, formatNeedsHumanComment(exhausted, { issueNumber: pr.number }));
 		await gh.createCheckRun(env, {
 			name: 'omen-review-clean',
 			headSha: pr.head.sha,
 			conclusion: 'failure',
 			title: 'Review fix rounds exhausted',
-			summary: `Stopped after ${env.maxReviewRounds} rounds.`,
+			summary: exhausted.blocker,
 		});
 		return;
 	}
@@ -51,7 +61,6 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 		.join('\n\n---\n\n');
 
 	if (!feedback.trim()) {
-		// No CodeRabbit comments yet — do not mark clean (wait for first review).
 		await gh.createCheckRun(env, {
 			name: 'omen-review-clean',
 			headSha: pr.head.sha,
@@ -68,6 +77,9 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			clean: { type: 'boolean' },
 			needs_human: { type: 'boolean' },
 			message: { type: 'string' },
+			blocker: { type: 'string' },
+			questions: { type: 'array', items: { type: 'string' } },
+			unblock_steps: { type: 'string' },
 		}, ['clean', 'message']),
 	];
 
@@ -90,16 +102,30 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 
 	const finished = ctx.finished;
 	if (finished?.needs_human) {
-		await gh.addPullLabels(env, pr.number, ['needs-human']);
-		await gh.commentOnIssue(env, pr.number, `### Omen address-review\n\nNeeds human.\n\n${String(finished.message || '')}`);
-		await gh.createCheckRun(env, {
-			name: 'omen-review-clean',
-			headSha: pr.head.sha,
-			conclusion: 'failure',
-			title: 'Needs human',
-			summary: String(finished.message || 'Agent requested human help'),
-		});
-		return;
+		if (!isActionableNeedsHuman(finished)) {
+			await gh.commentOnIssue(
+				env,
+				pr.number,
+				[
+					'### Omen address-review — escalation rejected',
+					'',
+					'Agent requested needs-human without actionable questions. Continuing without that label.',
+					'',
+					`> ${String(finished.message || '')}`,
+				].join('\n'),
+			);
+		} else {
+			await gh.addPullLabels(env, pr.number, ['needs-human']);
+			await gh.commentOnIssue(env, pr.number, formatNeedsHumanComment(finished, { issueNumber: pr.number }));
+			await gh.createCheckRun(env, {
+				name: 'omen-review-clean',
+				headSha: pr.head.sha,
+				conclusion: 'failure',
+				title: 'Needs human',
+				summary: String(finished.blocker || finished.message || 'Agent requested human help'),
+			});
+			return;
+		}
 	}
 
 	const refreshed = await gh.getPull(env, pr.number);

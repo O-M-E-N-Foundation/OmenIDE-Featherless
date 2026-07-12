@@ -6,6 +6,7 @@
 import type { AgentEnv } from '../config.ts';
 import { runAgentLoop } from '../agent-loop.ts';
 import * as gh from '../github.ts';
+import { formatNeedsHumanComment, formatRejectedNeedsHumanComment, isActionableNeedsHuman } from '../needs-human.ts';
 import { baseTools, finishTool } from '../tools.ts';
 
 export async function runImplement(env: AgentEnv): Promise<void> {
@@ -21,6 +22,7 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 
 	await gh.setIssueLabels(env, issue.number, ['ai-in-flight']);
 	await gh.removeIssueLabel(env, issue.number, 'ready-for-ai');
+	await gh.removeIssueLabel(env, issue.number, 'needs-human');
 
 	const tools = [
 		...baseTools(),
@@ -29,6 +31,16 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 			branch: { type: 'string' },
 			pr_url: { type: 'string' },
 			message: { type: 'string' },
+			blocker: { type: 'string', description: 'Required when status=needs-human: concrete blocker' },
+			questions: {
+				type: 'array',
+				items: { type: 'string' },
+				description: 'Required when status=needs-human: actionable questions with recommended defaults',
+			},
+			unblock_steps: {
+				type: 'string',
+				description: 'Required when status=needs-human: exact human steps to resume',
+			},
 		}, ['status', 'message']),
 	];
 
@@ -47,6 +59,8 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 			issue.body || '(no body)',
 			'',
 			'Create commits on the suggested branch, push with gh/git, and open a PR labeled ai-authored that Fixes this issue.',
+			'',
+			'IMPORTANT: ready-for-ai already approved shipping. Choose sensible defaults for unspecified UX/timeout details and implement. Do not escalate for "architectural complexity".',
 		].join('\n'),
 		tools,
 	});
@@ -54,12 +68,31 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 	await gh.removeIssueLabel(env, issue.number, 'ai-in-flight');
 
 	const finished = ctx.finished;
-	if (!finished || finished.status === 'needs-human') {
+	if (!finished) {
+		await gh.commentOnIssue(
+			env,
+			issue.number,
+			formatRejectedNeedsHumanComment('Agent exited without finish_implement.'),
+		);
+		return;
+	}
+
+	if (finished.status === 'needs-human') {
+		if (!isActionableNeedsHuman(finished)) {
+			await gh.commentOnIssue(
+				env,
+				issue.number,
+				formatRejectedNeedsHumanComment(String(finished.message || finished.blocker || '')),
+			);
+			// Do not apply needs-human — leave the issue easy to re-queue with ready-for-ai.
+			return;
+		}
+
 		await gh.setIssueLabels(env, issue.number, ['needs-human']);
 		await gh.commentOnIssue(
 			env,
 			issue.number,
-			`### Omen implement\n\nNeeds human attention.\n\n${String(finished?.message || 'Agent did not complete successfully.')}`,
+			formatNeedsHumanComment(finished, { issueNumber: issue.number }),
 		);
 		return;
 	}

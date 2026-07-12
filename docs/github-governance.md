@@ -16,13 +16,25 @@ This repository (`O-M-E-N-Foundation/OmenIDE-Featherless`) uses branch protectio
 
 | Label | Meaning |
 |-------|---------|
-| `ready-for-ai` | Write collaborator approved implement â†’ CodeRabbit â†’ **auto-merge** |
-| `ai-in-flight` | Agent currently working the issue |
+| `ready-for-ai` | Write collaborator approved implement -> CodeRabbit -> **auto-merge** |
+| `ai-in-flight` | Agent currently working this issue |
 | `ai-authored` | PR produced by the Omen agent |
-| `needs-human` | Blocked (spec, credentials, security, exhausted fix rounds) |
+| `needs-human` | Blocked only when the agent posts **actionable questions + unblock steps** |
 | `triage:needs-info` | Incomplete issue |
 | `triage:duplicate` | Likely duplicate |
 | `security` | Never auto-implement or auto-merge |
+
+### `needs-human` contract
+
+When the agent applies `needs-human`, the comment **must** include:
+
+1. **Blocker** - what is missing or broken (concrete)
+2. **Please answer** - numbered questions with recommended defaults
+3. **To unblock** - exact steps (usually: comment answers -> remove `needs-human` -> add `ready-for-ai`)
+
+If the agent escalates without that structure, the runner **rejects** the escalation (does not apply `needs-human`) so the issue can be re-queued.
+
+`ready-for-ai` already means ship approval: agents must choose sensible defaults for minor design details instead of asking humans to redesign the approach.
 
 Create labels once:
 
@@ -34,29 +46,29 @@ Create labels once:
 
 Only users with **Write**, **Maintain**, or **Admin** on the repo. The `ready-for-ai-gate` workflow removes the label if anyone else applies it.
 
-**`ready-for-ai` means approve to implement and ship**, not â€œopen a draft for humans.â€ Only add it when acceptance criteria are clear enough to merge.
+**`ready-for-ai` means approve to implement and ship**, not "open a draft for humans." Only add it when acceptance criteria are clear enough to merge.
 
 Issues labeled `security` never enter the autonomous path.
 
 ## Agent pipeline
 
 ```
-Issue opened â†’ Featherless triage (comment + triage labels)
+Issue opened -> Featherless triage (comment + triage labels)
 Write collaborator adds ready-for-ai
-  â†’ implement (branch + PR labeled ai-authored)
-  â†’ CodeRabbit review
-  â†’ Featherless address-review (fix loop)
-  â†’ omen-review-clean + security CI green
-  â†’ auto squash-merge to main
+  -> implement (branch + PR labeled ai-authored)
+  -> CodeRabbit review
+  -> Featherless address-review (fix loop)
+  -> omen-review-clean + security CI green
+  -> auto squash-merge to main
 ```
 
 QA is **post-merge** (QA team and/or community). Regressions become new GitHub issues.
 
-Review-fix rounds are capped (`OMEN_MAX_REVIEW_ROUNDS`, default `3`). Exhausted PRs get `needs-human` and are not merged.
+Review-fix rounds are capped (`OMEN_MAX_REVIEW_ROUNDS`, default `3`). Exhausted PRs get `needs-human` with actionable unblock steps and are not merged.
 
 ## Secrets and variables
 
-Configure under **Settings â†’ Secrets and variables â†’ Actions**:
+Configure under **Settings -> Secrets and variables -> Actions**:
 
 | Name | Type | Purpose |
 |------|------|---------|
@@ -92,4 +104,3 @@ Report vulnerabilities privately per [SECURITY.md](../SECURITY.md). Do not file 
 | `omen-address-review.yml` | Fix CodeRabbit feedback; emit `omen-review-clean` |
 | `omen-auto-merge.yml` | Squash-merge when gates pass |
 | `codeql.yml` / `secret-scan.yml` / `pr-hygiene.yml` | Security gates |
-

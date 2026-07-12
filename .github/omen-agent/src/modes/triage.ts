@@ -11,9 +11,9 @@ import { baseTools, finishTool } from '../tools.ts';
 const TRIAGE_LABELS = new Set([
 	'triage:needs-info',
 	'triage:duplicate',
-	'needs-human',
 	'security',
 ]);
+// needs-human is reserved for implement/address-review with actionable questions.
 
 export async function runTriage(env: AgentEnv): Promise<void> {
 	if (!env.issueNumber) {
