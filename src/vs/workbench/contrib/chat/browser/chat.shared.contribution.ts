@@ -165,6 +165,7 @@ import { ChatQuotaNotificationContribution } from './chatQuotaNotification.js';
 import { HasByokModelsContribution } from './hasByokModelsContribution.js';
 import { FeatherlessCredentialsContribution } from './featherlessCredentialsContribution.js';
 import { FeatherlessChatExtensionBootstrapContribution } from '../common/featherlessSetup.js';
+import { FeatherlessStartupSplashContribution } from './featherlessStartupSplashContribution.js';
 import { ChatStatusBarEntry } from './chatStatus/chatStatusEntry.js';
 import { ChatVariablesService } from './attachments/chatVariables.js';
 import { ChatWidget } from './widget/chatWidget.js';
@@ -2574,6 +2575,7 @@ registerWorkbenchContribution2(LocalAgentDisabledInputTipContribution.ID, LocalA
 registerWorkbenchContribution2(HasByokModelsContribution.ID, HasByokModelsContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(FeatherlessCredentialsContribution.ID, FeatherlessCredentialsContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(FeatherlessChatExtensionBootstrapContribution.ID, FeatherlessChatExtensionBootstrapContribution, WorkbenchPhase.BlockRestore);
+registerWorkbenchContribution2(FeatherlessStartupSplashContribution.ID, FeatherlessStartupSplashContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatTeardownContribution.ID, ChatTeardownContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatStatusBarEntry.ID, ChatStatusBarEntry, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(BuiltinToolsContribution.ID, BuiltinToolsContribution, WorkbenchPhase.Eventually);

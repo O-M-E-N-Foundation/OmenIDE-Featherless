@@ -1,0 +1,76 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* ---- Full-page startup splash overlay ----
+ * Covers the workbench until Featherless credential resolution + chat/models
+ * are ready (or a safety timeout / error occurs). z-index is kept below the
+ * onboarding overlay (10000) so the connect/auth UI can appear on top.
+ */
+
+.featherless-startup-splash {
+	position: absolute;
+	inset: 0;
+	z-index: 9000;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 28px;
+	background: var(--vscode-editor-background);
+	transition: opacity 220ms ease-out;
+}
+
+.featherless-startup-splash.featherless-startup-splash-dismissed {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.featherless-startup-splash .featherless-startup-splash-mark {
+	width: 128px;
+	height: 128px;
+	user-select: none;
+	-webkit-user-drag: none;
+}
+
+.featherless-startup-splash .featherless-startup-splash-title {
+	font-size: 22px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	letter-spacing: 0.3px;
+}
+
+.featherless-startup-splash .featherless-startup-splash-status {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	min-height: 18px;
+}
+
+.featherless-startup-splash .featherless-startup-splash-progress {
+	width: 220px;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--vscode-editorWidget-background);
+	overflow: hidden;
+}
+
+.featherless-startup-splash .featherless-startup-splash-progress-bar {
+	display: block;
+	height: 100%;
+	width: 40%;
+	border-radius: 2px;
+	background: var(--vscode-focusBorder);
+	animation: featherless-startup-splash-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes featherless-startup-splash-slide {
+	0%   { transform: translateX(-100%); }
+	100% { transform: translateX(350%); }
+}
+
+.monaco-reduce-motion .featherless-startup-splash .featherless-startup-splash-progress-bar {
+	animation: none;
+	width: 100%;
+	opacity: 0.6;
+}
