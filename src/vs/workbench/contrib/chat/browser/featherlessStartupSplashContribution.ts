@@ -16,8 +16,7 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
-import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
-import { ChatEntitlementContextKeys } from '../../../services/chat/common/chatEntitlementService.js';
+import { IChatEntitlementService, ChatEntitlementContextKeys } from '../../../services/chat/common/chatEntitlementService.js';
 import { IExtensionsWorkbenchService } from '../../extensions/common/extensions.js';
 import { ILanguageModelsService } from '../common/languageModels.js';
 import { usesFeatherlessOnlyProvider } from '../../../services/chat/common/featherless.js';
@@ -29,6 +28,8 @@ import { IOnboardingService } from '../../welcomeOnboarding/common/onboardingSer
  * so a hung service can never permanently block the IDE.
  */
 const SPLASH_SAFETY_TIMEOUT_MS = 15_000;
+
+type SplashOverlay = { element: HTMLElement; dispose(): void };
 
 /**
  * Full-page loading splash shown on Featherless-only Omen IDE startups.
@@ -47,7 +48,8 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 
 	static readonly ID = 'workbench.contrib.featherlessStartupSplash';
 
-	private readonly _overlayRef = this._register(new MutableDisposable<{ element: HTMLElement }>());
+	private readonly _overlayRef = this._register(new MutableDisposable<SplashOverlay>());
+	private _statusEl: HTMLElement | undefined;
 	private _dismissed = false;
 
 	constructor(
@@ -87,7 +89,8 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 		}
 
 		append(overlay, $('div.featherless-startup-splash-title')).textContent = localize('featherlessSplash.title', "Omen IDE");
-		append(overlay, $('div.featherless-startup-splash-status')).textContent = localize('featherlessSplash.status', "Loading Omen IDE\u2026");
+		this._statusEl = append(overlay, $('div.featherless-startup-splash-status'));
+		this._statusEl.textContent = localize('featherlessSplash.status', "Loading Omen IDE\u2026");
 
 		const progress = append(overlay, $('div.featherless-startup-splash-progress'));
 		append(progress, $('span.featherless-startup-splash-progress-bar'));
@@ -96,8 +99,9 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 	}
 
 	private _setStatus(text: string): void {
-		const overlay = this._overlayRef.value?.element;
-		overlay?.querySelector('.featherless-startup-splash-status')?.replaceChildren(text);
+		if (this._statusEl) {
+			this._statusEl.textContent = text;
+		}
 	}
 
 	private async _runSequence(): Promise<void> {
@@ -128,9 +132,9 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 	}
 
 	/**
-	 * Resolves once `omenide.hasFeatherlessCredentials` has a definitive value
-	 * (true or false), racing the safety timeout so a missing secret-storage
-	 * response cannot block forever.
+	 * Resolves once credentials are confirmed present, or the safety timeout elapses.
+	 * Does not settle on `false` early — a slow first secret-storage refresh can still
+	 * flip `omenide.hasFeatherlessCredentials` to true after an initial false.
 	 */
 	private async _waitForCredentialResolution(): Promise<boolean> {
 		const resolved = new DeferredPromise<boolean>();
@@ -139,15 +143,6 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 			const value = this._contextKeyService.getContextKeyValue<boolean>(ChatEntitlementContextKeys.hasFeatherlessCredentials.key);
 			if (value === true) {
 				resolved.complete(true);
-			} else if (value === false) {
-				// `false` is only definitive once the FeatherlessCredentialsContribution refresh
-				// has run. Give it a tick to settle before treating false as final.
-				disposableTimeout(() => {
-					if (!resolved.isSettled) {
-						const v = this._contextKeyService.getContextKeyValue<boolean>(ChatEntitlementContextKeys.hasFeatherlessCredentials.key);
-						resolved.complete(v === true);
-					}
-				}, 500, this._store);
 			}
 		};
 
@@ -162,39 +157,25 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 		const result = await raceTimeout(resolved.p, SPLASH_SAFETY_TIMEOUT_MS);
 		listener.dispose();
 
-		// On timeout, treat as "no credentials" so the connect flow is shown.
-		return result === true;
+		if (result === true) {
+			return true;
+		}
+		// Final read after timeout (credentials may have arrived on the last tick).
+		return this._contextKeyService.getContextKeyValue<boolean>(ChatEntitlementContextKeys.hasFeatherlessCredentials.key) === true;
 	}
 
 	/**
 	 * Ensures the Omen IDE chat extension is ready and waits until Featherless
-	 * models are registered (or the safety timeout fires). Errors/timeouts fall
-	 * through to dismissal; the IDE remains usable with AI degraded.
+	 * models are registered. One safety deadline covers extension setup + model wait.
 	 */
 	private async _waitForReady(): Promise<void> {
-		try {
-			await ensureFeatherlessChatExtensionReady(
-				this._extensionsWorkbenchService,
-				this._extensionService,
-				this._chatEntitlementService,
-				this._productService,
-				this._logService,
-				this._commandService,
-				this._languageModelsService,
-			);
-		} catch (err) {
-			this._logService.warn(`[featherless splash] chat extension ready failed: ${err instanceof Error ? err.message : String(err)}`);
-			return;
-		}
-
-		if (this._store.isDisposed || this._dismissed) {
-			return;
-		}
-
-		// Wait for at least one Featherless model OR omenide.hasByokModels, racing the timeout.
 		const ready = new DeferredPromise<void>();
 
 		const checkModels = (): void => {
+			if (this._store.isDisposed || this._dismissed) {
+				ready.complete(undefined);
+				return;
+			}
 			if (this._languageModelsService.getLanguageModelIds().some(id => id.startsWith('featherless/'))) {
 				ready.complete(undefined);
 				return;
@@ -211,9 +192,31 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 			}
 		}));
 
-		checkModels();
+		const work = (async () => {
+			try {
+				await ensureFeatherlessChatExtensionReady(
+					this._extensionsWorkbenchService,
+					this._extensionService,
+					this._chatEntitlementService,
+					this._productService,
+					this._logService,
+					this._commandService,
+					this._languageModelsService,
+				);
+			} catch (err) {
+				this._logService.warn(`[featherless splash] chat extension ready failed: ${err instanceof Error ? err.message : String(err)}`);
+				return;
+			}
 
-		await raceTimeout(ready.p, SPLASH_SAFETY_TIMEOUT_MS);
+			if (this._store.isDisposed || this._dismissed) {
+				return;
+			}
+
+			checkModels();
+			await ready.p;
+		})();
+
+		await raceTimeout(work, SPLASH_SAFETY_TIMEOUT_MS);
 		modelListener.dispose();
 		ctxListener.dispose();
 	}
@@ -245,14 +248,21 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 
 		overlay.classList.add('featherless-startup-splash-dismissed');
 		overlay.setAttribute('aria-busy', 'false');
+		// Fade then remove. Contribution dispose() clears the overlay synchronously instead.
 		this._register(disposableTimeout(() => {
-			overlay.remove();
-			this._overlayRef.clear();
+			if (this._overlayRef.value?.element === overlay) {
+				this._overlayRef.clear();
+			} else {
+				overlay.remove();
+			}
 		}, 240));
 	}
 
 	override dispose(): void {
-		this._dismiss();
+		// Sync remove — deferred dismiss timeouts are cancelled by store disposal.
+		this._dismissed = true;
+		this._statusEl = undefined;
+		this._overlayRef.clear();
 		super.dispose();
 	}
 }
