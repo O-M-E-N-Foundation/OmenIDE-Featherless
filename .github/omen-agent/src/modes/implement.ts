@@ -24,6 +24,14 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 	await gh.removeIssueLabel(env, issue.number, 'ready-for-ai');
 	await gh.removeIssueLabel(env, issue.number, 'needs-human');
 
+	try {
+		await runImplementBody(env, issue);
+	} finally {
+		await gh.removeIssueLabel(env, issue.number, 'ai-in-flight');
+	}
+}
+
+async function runImplementBody(env: AgentEnv, issue: Awaited<ReturnType<typeof gh.getIssue>>): Promise<void> {
 	const comments = await gh.listIssueComments(env, issue.number);
 	const recentComments = comments
 		.slice(-8)
@@ -72,16 +80,15 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 			'',
 			'## Required outcome',
 			'1. Create/edit implementation files (write_file/edit_file) within the first ~15 tool steps.',
-			'2. git checkout -b, commit, push.',
-			'3. Open PR labeled ai-authored with Fixes #' + issue.number + ' via gh_create_pr.',
-			'4. Call finish_implement(status=ok, pr_url=...).',
+			'2. Run `npm run typecheck-client` (npm ci if needed) and fix TS errors before commit.',
+			'3. git checkout -b, commit, push.',
+			'4. Open PR labeled ai-authored with Fixes #' + issue.number + ' via gh_create_pr.',
+			'5. Call finish_implement(status=ok, pr_url=...).',
 			'',
 			'ready-for-ai already approved shipping. Choose sensible defaults. Do not escalate for complexity.',
 		].join('\n'),
 		tools,
 	});
-
-	await gh.removeIssueLabel(env, issue.number, 'ai-in-flight');
 
 	const finished = ctx.finished;
 	if (!finished) {
