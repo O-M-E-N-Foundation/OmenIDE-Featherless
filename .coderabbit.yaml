@@ -2,7 +2,9 @@
 language: en-US
 reviews:
   profile: assertive
-  request_changes_workflow: false
+  # REQUEST_CHANGES while actionable findings remain; APPROVE when clear.
+  # Branch ruleset requires 1 approving review + resolved threads.
+  request_changes_workflow: true
   high_level_summary: true
   poem: false
   review_status: true

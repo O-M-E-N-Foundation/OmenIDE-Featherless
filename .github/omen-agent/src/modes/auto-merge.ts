@@ -35,10 +35,15 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 			continue;
 		}
 
-		const { issueComments } = await gh.listPullComments(env, pr.number);
-		const hasCodeRabbit = issueComments.some(c => gh.isCodeRabbitLogin(c.user.login));
-		if (!hasCodeRabbit) {
-			console.log(`PR #${pr.number}: waiting for CodeRabbit`);
+		const rabbitReview = await gh.getLatestCodeRabbitReview(env, pr.number);
+		if (!gh.codeRabbitApproved(rabbitReview)) {
+			console.log(`PR #${pr.number}: waiting for CodeRabbit APPROVED (got ${rabbitReview?.state ?? 'none'})`);
+			continue;
+		}
+
+		const unresolved = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
+		if (unresolved.length) {
+			console.log(`PR #${pr.number}: ${unresolved.length} unresolved CodeRabbit thread(s)`);
 			continue;
 		}
 
@@ -54,7 +59,7 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 			await gh.commentOnIssue(
 				env,
 				pr.number,
-				'### Omen auto-merge\n\nSquash-merged to `main` after CodeRabbit + security checks passed.\n\n**QA is post-merge.** Please verify in a build/release; file a new issue if you find a regression.',
+				'### Omen auto-merge\n\nSquash-merged to `main` after CodeRabbit **approval**, resolved review threads, and security checks passed.\n\n**QA is post-merge.** Please verify in a build/release; file a new issue if you find a regression.',
 			);
 			console.log(`Merged PR #${pr.number}`);
 		} catch (err) {
@@ -69,21 +74,28 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 }
 
 export async function runMergeReady(env: AgentEnv): Promise<void> {
-	// Compatibility alias used by workflows that only need a clean check re-evaluation.
+	// Re-evaluate merge readiness from CodeRabbit state (does not invent approval).
 	if (!env.prNumber) {
 		throw new Error('OMEN_PR_NUMBER required');
 	}
 	const pr = await gh.getPull(env, env.prNumber);
-	const { issueComments, reviewComments } = await gh.listPullComments(env, pr.number);
-	const rabbit = [...issueComments, ...reviewComments].filter(c => gh.isCodeRabbitLogin(c.user.login));
-	const conclusion = rabbit.length ? 'success' : 'neutral';
+	const unresolved = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
+	const rabbitReview = await gh.getLatestCodeRabbitReview(env, pr.number);
+	const approved = gh.codeRabbitApproved(rabbitReview) && unresolved.length === 0;
 	await gh.createCheckRun(env, {
 		name: 'omen-review-clean',
 		headSha: pr.head.sha,
-		conclusion: conclusion === 'success' ? 'success' : 'neutral',
-		title: conclusion === 'success' ? 'CodeRabbit seen' : 'Waiting for CodeRabbit',
-		summary: conclusion === 'success'
-			? 'CodeRabbit has reviewed; ensure address-review marked clean before merge.'
-			: 'No CodeRabbit activity yet.',
+		conclusion: approved ? 'success' : rabbitReview ? 'neutral' : 'neutral',
+		title: approved
+			? 'CodeRabbit approved + threads clear'
+			: unresolved.length
+				? `${unresolved.length} CodeRabbit thread(s) open`
+				: rabbitReview
+					? `Waiting for CodeRabbit approval (state: ${rabbitReview.state})`
+					: 'Waiting for CodeRabbit',
+		summary: [
+			`CodeRabbit review state: ${rabbitReview?.state ?? '(none)'}`,
+			`Unresolved CodeRabbit threads: ${unresolved.length}`,
+		].join('\n'),
 	});
 }

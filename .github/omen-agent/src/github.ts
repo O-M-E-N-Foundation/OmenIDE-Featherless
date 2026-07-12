@@ -139,7 +139,8 @@ export async function createCheckRun(env: AgentEnv, input: {
 	title: string;
 	summary: string;
 }) {
-	return gh(env, `/repos/${env.owner}/${env.repo}/check-runs`, {
+	const checksEnv = { ...env, githubToken: env.checksGithubToken || env.githubToken };
+	return gh(checksEnv, `/repos/${env.owner}/${env.repo}/check-runs`, {
 		method: 'POST',
 		body: JSON.stringify({
 			name: input.name,
@@ -156,6 +157,121 @@ export async function createCheckRun(env: AgentEnv, input: {
 
 export function isCodeRabbitLogin(login: string): boolean {
 	return login.toLowerCase().includes('coderabbit');
+}
+
+export interface ReviewThreadSummary {
+	id: string;
+	isResolved: boolean;
+	isOutdated: boolean;
+	path?: string;
+	body: string;
+	author: string;
+}
+
+export async function listPullReviewThreads(env: AgentEnv, prNumber: number): Promise<ReviewThreadSummary[]> {
+	const query = `
+		query($owner:String!, $repo:String!, $number:Int!) {
+			repository(owner:$owner, name:$repo) {
+				pullRequest(number:$number) {
+					reviewThreads(first:100) {
+						nodes {
+							id
+							isResolved
+							isOutdated
+							comments(first:1) {
+								nodes {
+									body
+									path
+									author { login }
+								}
+							}
+						}
+					}
+				}
+			}
+		}`;
+	const data = await gh<{
+		data?: {
+			repository?: {
+				pullRequest?: {
+					reviewThreads?: {
+						nodes: Array<{
+							id: string;
+							isResolved: boolean;
+							isOutdated: boolean;
+							comments: { nodes: Array<{ body: string; path?: string; author?: { login: string } }> };
+						}>;
+					};
+				};
+			};
+		};
+		errors?: Array<{ message: string }>;
+	}>(env, '/graphql', {
+		method: 'POST',
+		body: JSON.stringify({
+			query,
+			variables: { owner: env.owner, repo: env.repo, number: prNumber },
+		}),
+	});
+	if (data.errors?.length) {
+		throw new Error(`GraphQL reviewThreads: ${data.errors.map(e => e.message).join('; ')}`);
+	}
+	const nodes = data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+	return nodes.map(n => {
+		const c = n.comments.nodes[0];
+		return {
+			id: n.id,
+			isResolved: n.isResolved,
+			isOutdated: n.isOutdated,
+			path: c?.path,
+			body: c?.body ?? '',
+			author: c?.author?.login ?? '',
+		};
+	});
+}
+
+export async function listUnresolvedCodeRabbitThreads(env: AgentEnv, prNumber: number): Promise<ReviewThreadSummary[]> {
+	const threads = await listPullReviewThreads(env, prNumber);
+	return threads.filter(t => !t.isResolved && !t.isOutdated && isCodeRabbitLogin(t.author));
+}
+
+export async function resolveReviewThread(env: AgentEnv, threadId: string): Promise<void> {
+	const mutation = `
+		mutation($id:ID!) {
+			resolveReviewThread(input:{threadId:$id}) {
+				thread { isResolved }
+			}
+		}`;
+	const data = await gh<{ errors?: Array<{ message: string }> }>(env, '/graphql', {
+		method: 'POST',
+		body: JSON.stringify({ query: mutation, variables: { id: threadId } }),
+	});
+	if (data.errors?.length) {
+		throw new Error(`resolveReviewThread: ${data.errors.map(e => e.message).join('; ')}`);
+	}
+}
+
+export type PullReviewState = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING' | string;
+
+export async function getLatestCodeRabbitReview(env: AgentEnv, prNumber: number): Promise<{
+	state: PullReviewState | null;
+	submittedAt: string | null;
+} | null> {
+	const reviews = await gh<Array<{
+		user: { login: string };
+		state: string;
+		submitted_at: string | null;
+	}>>(env, `/repos/${env.owner}/${env.repo}/pulls/${prNumber}/reviews?per_page=100`);
+	const rabbit = reviews.filter(r => isCodeRabbitLogin(r.user.login));
+	if (!rabbit.length) {
+		return null;
+	}
+	const latest = rabbit[rabbit.length - 1];
+	return { state: latest.state, submittedAt: latest.submitted_at };
+}
+
+export function codeRabbitApproved(review: { state: PullReviewState | null } | null): boolean {
+	return Boolean(review && review.state === 'APPROVED');
 }
 
 export async function listOpenAiPulls(env: AgentEnv) {

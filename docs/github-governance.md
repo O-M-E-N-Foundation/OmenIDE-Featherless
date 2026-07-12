@@ -6,11 +6,11 @@ This repository (`O-M-E-N-Foundation/OmenIDE-Featherless`) uses branch protectio
 
 - **No direct commits** to `main`. All changes go through pull requests.
 - Apply the ruleset with [`scripts/setup-github-ruleset.ps1`](../scripts/setup-github-ruleset.ps1) (org admin + `gh auth login`).
-- Required status checks before merge:
-  - `CodeQL`
-  - `secret-scan`
-  - `pr-hygiene`
-- For **`ai-authored` PRs**, auto-merge also requires a successful `omen-review-clean` check (CodeRabbit feedback cleared). That check is **not** a branch ruleset requirement so human PRs are not blocked.
+- Required before merge:
+  - Status checks: `CodeQL`, `secret-scan`, `pr-hygiene`
+  - **1 approving review** (CodeRabbit APPROVE when review is clean; humans can approve too)
+  - **All review threads resolved**
+- For **`ai-authored` PRs**, auto-merge additionally requires a successful `omen-review-clean` check (agent verified CodeRabbit APPROVED + no open CodeRabbit threads). That check is **not** a branch ruleset requirement so human PRs are not blocked by it.
 
 ## Labels
 
@@ -56,10 +56,11 @@ Issues labeled `security` never enter the autonomous path.
 Issue opened -> Featherless triage (comment + triage labels)
 Write collaborator adds ready-for-ai
   -> implement (branch + PR labeled ai-authored)
-  -> CodeRabbit review
-  -> Featherless address-review (fix loop)
+  -> CodeRabbit review (REQUEST_CHANGES while findings remain)
+  -> Featherless address-review (fix + resolve threads; debounce concurrent comments)
+  -> CodeRabbit re-review **APPROVE**
   -> omen-review-clean + security CI green
-  -> auto squash-merge to main
+  -> auto squash-merge to `main`
 ```
 
 QA is **post-merge** (QA team and/or community). Regressions become new GitHub issues.
@@ -75,7 +76,7 @@ Full microsoft/vscode OSS PR CI (**Code OSS** Electron/Browser/Remote, node_modu
 - `CodeQL`
 - `secret-scan` (Gitleaks; requires `GITLEAKS_LICENSE` secret)
 - `pr-hygiene`
-- CodeRabbit + `omen-address-review` → `omen-review-clean`
+- CodeRabbit + `omen-address-review` → CodeRabbit **APPROVE** + resolved threads → `omen-review-clean`
 - Monaco Editor checks / telemetry metadata (lightweight, GitHub-hosted)
 
 Disabled suites remain in `.github/workflows/` as `workflow_dispatch`-only so they can be re-enabled later if runners are available.
@@ -97,7 +98,14 @@ Prefer a **GitHub App** installation token over a personal PAT so merges and che
 
 ## CodeRabbit
 
-[`.coderabbit.yaml`](../.coderabbit.yaml) enables auto-review on PRs. Keep the CodeRabbit GitHub App installed on this repository.
+[`.coderabbit.yaml`](../.coderabbit.yaml) enables auto-review on PRs with `request_changes_workflow: true` so CodeRabbit **requests changes** while actionable findings remain and **approves** when clear. Keep the CodeRabbit GitHub App installed on this repository.
+
+Address-review:
+- Debounces ~90s so a burst of inline comments becomes one agent run
+- Checks out the **PR head branch** (not `main`)
+- Treats unresolved review threads as the source of truth (agent `clean=true` is ignored if threads remain)
+- Posts `omen-review-clean` with the Actions `GITHUB_TOKEN` (`checks:write`); the agent PAT alone often cannot create check runs
+- Auto-merge refuses to ship without CodeRabbit **APPROVED** and zero unresolved CodeRabbit threads
 
 ## Security
 

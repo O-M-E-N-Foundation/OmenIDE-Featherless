@@ -7,8 +7,8 @@
   Requires: gh auth login with admin on O-M-E-N-Foundation/OmenIDE-Featherless
 
   Required checks: CodeQL, secret-scan, pr-hygiene
-  omen-review-clean is enforced by omen-auto-merge for ai-authored PRs only (not a branch ruleset check, so human PRs are not blocked).
-  No required human approving reviews (ready-for-ai is the ship gate).
+  Pull request rules: 1 approving review (CodeRabbit APPROVE when clean) + resolved threads
+  omen-review-clean is enforced by omen-auto-merge for ai-authored PRs only (not a branch ruleset check, so human PRs are not blocked by that check alone).
 #>
 
 param(
@@ -41,11 +41,11 @@ $payload = @"
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 0,
+        "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
         "require_last_push_approval": false,
-        "required_review_thread_resolution": false
+        "required_review_thread_resolution": true
       }
     },
     {
@@ -72,7 +72,9 @@ $payload = @"
 "@
 
 $tmp = Join-Path $env:TEMP "omen-ruleset-$PID.json"
-[System.IO.File]::WriteAllText($tmp, $payload)
+# UTF-8 without BOM (hygiene)
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($tmp, $payload, $utf8)
 
 try {
 	if ($existingId) {
