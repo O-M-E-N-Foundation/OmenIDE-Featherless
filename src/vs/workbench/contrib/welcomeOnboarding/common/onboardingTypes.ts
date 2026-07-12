@@ -42,7 +42,7 @@ export function getOnboardingStepTitle(stepId: OnboardingStepId): string {
 export function getOnboardingStepSubtitle(stepId: OnboardingStepId): string {
 	switch (stepId) {
 		case OnboardingStepId.FeatherlessApiKey:
-			return localize('onboarding.step.featherlessApiKey.subtitle', "Paste your Featherless.ai API key to power chat, agents, and Tab autocomplete");
+			return localize('onboarding.step.featherlessApiKey.subtitle', "Sign in with Featherless or paste an API key to power chat, agents, and Tab autocomplete");
 		case OnboardingStepId.SignIn:
 			return localize('onboarding.step.signIn.subtitle', "Sync settings, unlock AI features, and connect to GitHub");
 		case OnboardingStepId.Personalize:

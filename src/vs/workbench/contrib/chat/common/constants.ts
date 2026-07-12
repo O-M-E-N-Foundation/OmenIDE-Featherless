@@ -76,6 +76,7 @@ export enum ChatConfiguration {
 	SubagentsAllowInvocationsFromSubagents = 'chat.subagents.allowInvocationsFromSubagents',
 	ShowCodeBlockProgressAnimation = 'chat.agent.codeBlockProgress',
 	RestoreLastPanelSession = 'chat.restoreLastPanelSession',
+	HistoryRetentionDays = 'chat.history.retentionDays',
 	ExitAfterDelegation = 'chat.exitAfterDelegation',
 	ExplainChangesEnabled = 'chat.editing.explainChanges.enabled',
 	RevealNextChangeOnResolve = 'chat.editing.revealNextChangeOnResolve',

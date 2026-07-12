@@ -163,6 +163,7 @@ import { ChatTerminalOutputAccessibleView } from './accessibility/chatTerminalOu
 import { ChatSetupContribution, ChatTeardownContribution } from './chatSetup/chatSetupContributions.js';
 import { ChatQuotaNotificationContribution } from './chatQuotaNotification.js';
 import { HasByokModelsContribution } from './hasByokModelsContribution.js';
+import { FeatherlessCredentialsContribution } from './featherlessCredentialsContribution.js';
 import { FeatherlessChatExtensionBootstrapContribution } from '../common/featherlessSetup.js';
 import { ChatStatusBarEntry } from './chatStatus/chatStatusEntry.js';
 import { ChatVariablesService } from './attachments/chatVariables.js';
@@ -216,6 +217,8 @@ import { ExploreAgentDefaultModel } from './exploreAgentDefaultModel.js';
 import { PlanAgentDefaultModel } from './planAgentDefaultModel.js';
 import { UtilityModelContribution, UtilitySmallModelContribution } from './utilityModelContribution.js';
 import { ChatImageCarouselService, IChatImageCarouselService } from './chatImageCarouselService.js';
+import { OmenImageAnalysisService } from './omenImageAnalysisService.js';
+import { IOmenImageAnalysisService } from '../common/omenImageAnalysis.js';
 
 CommandsRegistry.registerCommand('_chat.notifyQuestionCarouselAnswer', (accessor: ServicesAccessor, resolveId: string, answers?: import('../common/chatService/chatService.js').IChatQuestionAnswers) => {
 	accessor.get(IChatService).notifyQuestionCarouselAnswer('', resolveId, answers);
@@ -1911,6 +1914,12 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.restoreLastPanelSession', "Controls whether the last session is restored in panel after restart."),
 			default: false
 		},
+		[ChatConfiguration.HistoryRetentionDays]: {
+			type: 'number',
+			minimum: 0,
+			markdownDescription: nls.localize('chat.history.retentionDays', "Controls how long local workspace chat history is kept, in days. Sessions older than this are removed from history. Set to `0` to keep chat history forever."),
+			default: 30
+		},
 		[ChatConfiguration.ExitAfterDelegation]: {
 			type: 'boolean',
 			description: nls.localize('chat.exitAfterDelegation', "Controls whether the chat panel automatically exits after delegating a request to another session."),
@@ -2350,29 +2359,37 @@ class ChatForegroundSessionCountContribution extends Disposable implements IWork
 
 /**
  * Given builtin and custom modes, returns only the custom mode IDs that should have actions registered.
- * Custom modes whose names conflict with builtin modes are excluded.
+ * Custom modes whose names/labels conflict with builtin modes (case-insensitive) are excluded.
  * If there are name collisions among custom modes, the later mode in the list wins.
  */
 function getCustomModesWithUniqueNames(builtinModes: readonly IChatMode[], customModes: readonly IChatMode[]): Set<string> {
 	const customModeIds = new Set<string>();
-	const builtinNames = new Set(builtinModes.map(mode => mode.name.get()));
+	const builtinNames = new Set<string>();
+	for (const mode of builtinModes) {
+		builtinNames.add(mode.name.get().toLowerCase());
+		builtinNames.add(mode.label.get().toLowerCase());
+		builtinNames.add(mode.id.toLowerCase());
+	}
 	const customNameToId = new Map<string, string>();
 
 	for (const mode of customModes) {
 		const modeName = mode.name.get();
+		const modeNameKey = modeName.toLowerCase();
+		const modeLabelKey = mode.label.get().toLowerCase();
 
-		// Skip custom modes that conflict with builtin mode names
-		if (builtinNames.has(modeName)) {
+		// Skip custom modes that conflict with builtin mode names/labels
+		// (e.g. Copilot's "Plan" agent vs core ChatMode.Plan → workbench.action.chat.openPlan).
+		if (builtinNames.has(modeNameKey) || builtinNames.has(modeLabelKey)) {
 			continue;
 		}
 
 		// If there is a name collision among custom modes, the later one in the list wins
-		const existingId = customNameToId.get(modeName);
+		const existingId = customNameToId.get(modeNameKey);
 		if (existingId) {
 			customModeIds.delete(existingId);
 		}
 
-		customNameToId.set(modeName, mode.id);
+		customNameToId.set(modeNameKey, mode.id);
 		customModeIds.add(mode.id);
 	}
 
@@ -2555,6 +2572,7 @@ registerWorkbenchContribution2(ChatSetupContribution.ID, ChatSetupContribution, 
 registerWorkbenchContribution2(ChatQuotaNotificationContribution.ID, ChatQuotaNotificationContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(LocalAgentDisabledInputTipContribution.ID, LocalAgentDisabledInputTipContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(HasByokModelsContribution.ID, HasByokModelsContribution, WorkbenchPhase.BlockRestore);
+registerWorkbenchContribution2(FeatherlessCredentialsContribution.ID, FeatherlessCredentialsContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(FeatherlessChatExtensionBootstrapContribution.ID, FeatherlessChatExtensionBootstrapContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatTeardownContribution.ID, ChatTeardownContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatStatusBarEntry.ID, ChatStatusBarEntry, WorkbenchPhase.BlockRestore);
@@ -2664,5 +2682,6 @@ registerSingleton(IPlanReviewFeedbackService, PlanReviewFeedbackService, Instant
 registerSingleton(IChatTipService, ChatTipService, InstantiationType.Delayed);
 registerSingleton(IChatDebugService, ChatDebugServiceImpl, InstantiationType.Delayed);
 registerSingleton(IChatImageCarouselService, ChatImageCarouselService, InstantiationType.Delayed);
+registerSingleton(IOmenImageAnalysisService, OmenImageAnalysisService, InstantiationType.Delayed);
 
 ChatWidget.CONTRIBS.push(ChatDynamicVariableModel);

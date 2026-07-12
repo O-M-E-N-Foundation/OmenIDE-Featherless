@@ -71,6 +71,8 @@ export namespace ChatEntitlementContextKeys {
 	export const clientByokEnabled = new RawContextKey<boolean>('omenide.clientByokEnabled', true, true);
 
 	export const hasByokModels = new RawContextKey<boolean>('omenide.hasByokModels', false, true);
+
+	export const hasFeatherlessCredentials = new RawContextKey<boolean>('omenide.hasFeatherlessCredentials', false, true);
 }
 
 export const IChatEntitlementService = createDecorator<IChatEntitlementService>('chatEntitlementService');

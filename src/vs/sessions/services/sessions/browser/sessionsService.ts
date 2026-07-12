@@ -105,12 +105,13 @@ export interface ISessionsService {
 	readonly activeSession: IObservable<IActiveSession | undefined>;
 
 	/**
-	 * Observable list of slots currently displayed in the sessions part's
-	 * grid, in their grid order (left-to-right). Each entry is either an
-	 * {@link IActiveSession} or `undefined` for the empty (new-session)
-	 * placeholder. At most one entry is `undefined` at a time. Sessions
-	 * pinned via {@link toggleSessionStickiness} are sticky; the remaining
-	 * non-sticky entries get replaced when new sessions are opened.
+	 * Observable list of slots currently open as session tabs (and optionally
+	 * shown side-by-side in split view), in tab/grid order (left-to-right). Each
+	 * entry is either an {@link IActiveSession} or `undefined` for the empty
+	 * (new-session) placeholder. At most one entry is `undefined` at a time.
+	 * Opening a session adds a tab; closing removes it from the open set while
+	 * keeping it in the sessions sidebar history. Sessions pinned via
+	 * {@link toggleSessionStickiness} stay sticky across recycle paths.
 	 */
 	readonly visibleSessions: IObservable<readonly (IActiveSession | undefined)[]>;
 
@@ -274,6 +275,13 @@ export class SessionsService extends Disposable implements ISessionsService {
 	 */
 	private _focusedActiveSessionId: string | undefined;
 
+	/**
+	 * When true, the sessions part renders open sessions side-by-side (split).
+	 * Entered via {@link insertAt} / open-to-the-side; cleared when fewer than
+	 * two real sessions remain visible. Default is Cursor-style tabs + single pane.
+	 */
+	private _splitViewEnabled = false;
+
 	/** The in-flight foreground send's "keep newest chat active" follow. */
 	private readonly _sendFollow = this._register(new MutableDisposable<DisposableStore>());
 
@@ -373,7 +381,11 @@ export class SessionsService extends Disposable implements ISessionsService {
 			const visible = this.visibleSessions.read(reader);
 			const active = this._visibility.activeSession.read(reader);
 			const preserveFocus = this._visibility.activePreserveFocus.read(reader);
-			this.sessionsPartService.updateVisibleSessions(visible, active);
+			const realCount = visible.filter(s => !!s).length;
+			if (realCount <= 1) {
+				this._splitViewEnabled = false;
+			}
+			this.sessionsPartService.updateVisibleSessions(visible, active, { splitView: this._splitViewEnabled });
 
 			// Move keyboard focus into the active session whenever it changes
 			// (e.g. after opening, switching to, or restoring a session) so the
@@ -759,6 +771,7 @@ export class SessionsService extends Disposable implements ISessionsService {
 	}
 
 	insertAt(session: ISession, targetSessionId: string, side: 'left' | 'right', activate: boolean = true): void {
+		this._splitViewEnabled = true;
 		this._visibility.insertAt(session, targetSessionId, side, activate);
 	}
 

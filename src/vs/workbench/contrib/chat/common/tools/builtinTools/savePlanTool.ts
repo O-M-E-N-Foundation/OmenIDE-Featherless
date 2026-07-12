@@ -14,6 +14,7 @@ import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IChatService } from '../../chatService/chatService.js';
 import { IChatRequestModel } from '../../model/chatModel.js';
 import { ChatCreatedPlanData } from '../../model/chatProgressTypes/chatCreatedPlanData.js';
+import { extractPlanMarkdownBeforeSave, resolvePlanBody } from '../../plan/planContentResolver.js';
 import { IWorkspacePlanService } from '../../plan/workspacePlanService.js';
 import { IChatArtifactsService } from '../chatArtifactsService.js';
 import { CountTokensCallback, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, ToolDataSource, ToolProgress } from '../languageModelToolsService.js';
@@ -22,7 +23,7 @@ export const SavePlanToolId = 'vscode_savePlan';
 
 export interface ISavePlanParams {
 	readonly title: string;
-	readonly content: string;
+	readonly content?: string;
 	readonly overview: string;
 }
 
@@ -36,14 +37,14 @@ export function createSavePlanToolData(): IToolData {
 			},
 			content: {
 				type: 'string',
-				description: 'Full markdown plan body (without frontmatter).'
+				description: 'Optional markdown plan body. When omitted, the plan is captured from your assistant message immediately before this tool call.'
 			},
 			overview: {
 				type: 'string',
 				description: '1-3 sentence TL;DR shown in the Created Plan chat card.'
 			}
 		},
-		required: ['title', 'content', 'overview']
+		required: ['title', 'overview']
 	};
 
 	return {
@@ -52,7 +53,7 @@ export function createSavePlanToolData(): IToolData {
 		icon: ThemeIcon.fromId(Codicon.tasklist.id),
 		displayName: localize('tool.savePlan.displayName', 'Save Plan'),
 		userDescription: localize('tool.savePlan.userDescription', 'Save a plan to the workspace and show it for review.'),
-		modelDescription: 'Save the plan to the workspace `.omen/plans/` directory and show a Created Plan card with View Plan and Build buttons. Call this once the plan is ready. Provide title, full markdown content, and a short overview for the chat card.',
+		modelDescription: 'Save the plan to the workspace `.omen/plans/` directory and show a Created Plan card with View Plan and Build buttons. Call this once the plan is ready. First write the full plan as markdown in your assistant message, then call this tool with `title` and a short `overview` for the chat card. The `content` field is optional — when omitted or truncated, the plan body is captured from your preceding assistant message.',
 		inputSchema,
 		canBeReferencedInPrompt: true,
 		tags: ['plan'],
@@ -76,8 +77,8 @@ export class SavePlanTool extends Disposable implements IToolImpl {
 		const parameters = invocation.parameters as ISavePlanParams;
 		const { title, content, overview } = parameters;
 
-		if (!title?.trim() || !content?.trim() || !overview?.trim()) {
-			throw new Error(localize('savePlanTool.missingFields', 'title, content, and overview are required.'));
+		if (!title?.trim() || !overview?.trim()) {
+			throw new Error(localize('savePlanTool.missingFields', 'title and overview are required.'));
 		}
 
 		const { request } = this.getRequest(invocation.context?.sessionResource, invocation.chatRequestId);
@@ -86,10 +87,19 @@ export class SavePlanTool extends Disposable implements IToolImpl {
 			throw new Error(localize('savePlanTool.noContext', 'No active chat request.'));
 		}
 
+		const responseMarkdown = request.response
+			? extractPlanMarkdownBeforeSave(request.response.entireResponse.value, invocation.chatStreamToolCallId)
+			: undefined;
+		const planContent = resolvePlanBody(content, responseMarkdown);
+
+		if (!planContent) {
+			throw new Error(localize('savePlanTool.missingContent', 'Plan content is required. Write the full plan in your assistant message before calling savePlan, or include it in the `content` field.'));
+		}
+
 		const planUri = await this.workspacePlanService.createPlan({
 			sessionResource: invocation.context?.sessionResource,
 			title: title.trim(),
-			content: content.trim(),
+			content: planContent,
 			overview: overview.trim(),
 		});
 

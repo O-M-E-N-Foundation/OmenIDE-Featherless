@@ -1,0 +1,132 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Cursor-style open-session tabs inside the main Chat view pane. */
+.chat-view-session-tab-bar {
+	display: flex;
+	flex-direction: column;
+	flex-shrink: 0;
+	overflow: hidden;
+	padding: 4px 8px 0;
+	box-sizing: border-box;
+	border-bottom: 1px solid var(--vscode-panel-border);
+	container-type: inline-size;
+}
+
+.chat-view-session-tab-bar-row {
+	display: flex;
+	align-items: center;
+	height: 32px;
+	overflow: hidden;
+	gap: 4px;
+}
+
+.chat-view-session-tab-bar-row > .monaco-scrollable-element {
+	flex: 0 1 auto;
+	min-width: 0;
+	height: 100%;
+}
+
+.chat-view-session-tab-bar-tabs {
+	display: flex;
+	align-items: center;
+	height: 100%;
+	gap: 4px;
+}
+
+.chat-view-session-tab {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	position: relative;
+	padding: 0 8px;
+	cursor: pointer;
+	color: var(--vscode-foreground);
+	opacity: 0.7;
+	font-weight: 600;
+	font-size: 12px;
+	line-height: 22px;
+	height: 26px;
+	border-radius: 4px;
+	background-color: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+	user-select: none;
+	flex-shrink: 0;
+	max-width: min(200px, 40cqi);
+}
+
+.chat-view-session-tab:hover {
+	opacity: 1;
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-view-session-tab.active {
+	opacity: 1;
+	background-color: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+}
+
+.chat-view-session-tab:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.chat-view-session-tab-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.chat-view-session-tab-close {
+	display: inline-flex;
+	opacity: 0;
+	border: none;
+	background: transparent;
+	padding: 0;
+	margin: 0;
+	width: 16px;
+	height: 16px;
+	cursor: pointer;
+	border-radius: 3px;
+	color: inherit;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+}
+
+.chat-view-session-tab:hover .chat-view-session-tab-close,
+.chat-view-session-tab.active .chat-view-session-tab-close,
+.chat-view-session-tab:focus-within .chat-view-session-tab-close {
+	opacity: 1;
+}
+
+.chat-view-session-tab-close:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-view-session-tab-bar-new {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	border-radius: 4px;
+	color: var(--vscode-foreground);
+	opacity: 0.7;
+	padding: 0;
+}
+
+.chat-view-session-tab-bar-new:hover {
+	opacity: 1;
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-view-session-tab-bar-new:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}

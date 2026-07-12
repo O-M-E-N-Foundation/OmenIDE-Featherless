@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { timeout } from '../../../../base/common/async.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { $, append, addDisposableListener, EventType, clearNode, getActiveWindow } from '../../../../base/browser/dom.js';
@@ -12,7 +13,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { isWindows, isMacintosh, isLinux } from '../../../../base/common/platform.js';
 import { assertDefined } from '../../../../base/common/types.js';
 import { FileAccess } from '../../../../base/common/network.js';
-import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { InputBox, MessageType } from '../../../../base/browser/ui/inputbox/inputBox.js';
@@ -42,7 +43,7 @@ import { IChatEntitlementService } from '../../../services/chat/common/chatEntit
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ensureFeatherlessChatExtensionReady } from '../../chat/common/featherlessSetup.js';
-import { FEATHERLESS_EXTENSION_SET_KEY_COMMAND } from '../../../services/chat/common/featherless.js';
+import { FEATHERLESS_EXTENSION_BOOTSTRAP_COMMAND, FEATHERLESS_EXTENSION_HAS_KEY_COMMAND, FEATHERLESS_EXTENSION_SET_KEY_COMMAND, FEATHERLESS_EXTENSION_SIGN_IN_COMMAND } from '../../../services/chat/common/featherless.js';
 import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
 import {
 	OnboardingStepId,
@@ -93,6 +94,8 @@ const defaultChat = product.defaultChatAgent;
 const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier('OmenIDE.omenide-chat');
 /** Secret key used by BYOKStorageService for the Featherless provider API key. */
 const FEATHERLESS_API_KEY_SECRET = 'copilot-byok-Featherless-api-key';
+/** Secret key used by FeatherlessAuthService for OAuth access tokens. */
+const FEATHERLESS_OAUTH_ACCESS_TOKEN_SECRET = 'copilot-byok-Featherless-oauth-access-token';
 
 function getExtensionSecretStorageKey(extensionId: string, key: string): string {
 	return JSON.stringify({ extensionId, key });
@@ -153,10 +156,12 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private enterpriseSignInWatch: StopWatch | undefined;
 	private featherlessApiKeyValue = '';
 	private featherlessApiKeyConfigured = false;
+	private featherlessOAuthConfigured = false;
 	private featherlessApiKeyInputBox: InputBox | undefined;
+	private _auxBarWasVisibleBeforeOAuth: boolean | undefined;
 
 	constructor(
-		@ILayoutService private readonly layoutService: ILayoutService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IWorkbenchThemeService private readonly themeService: IWorkbenchThemeService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 		@IExtensionGalleryService private readonly extensionGalleryService: IExtensionGalleryService,
@@ -296,7 +301,11 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		if (!(await this._tryAdvanceFromCurrentStep())) {
 			return;
 		}
+		this._advanceFromCurrentStep();
+	}
 
+	/** Move past the current step after validation/auth succeeded. */
+	private _advanceFromCurrentStep(): void {
 		if (this._isLastStep()) {
 			this._logAction('complete');
 			this._dismiss('complete');
@@ -309,13 +318,20 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private async _tryAdvanceFromCurrentStep(): Promise<boolean> {
 		const stepId = this.steps[this.currentStepIndex];
 		if (stepId === OnboardingStepId.FeatherlessApiKey) {
+			if (this._hasFeatherlessCredentials()) {
+				return true;
+			}
 			return this._saveFeatherlessApiKeyFromWizard();
 		}
 		return true;
 	}
 
+	private _hasFeatherlessCredentials(): boolean {
+		return this.featherlessApiKeyConfigured || this.featherlessOAuthConfigured;
+	}
+
 	private async _saveFeatherlessApiKeyFromWizard(): Promise<boolean> {
-		if (this.featherlessApiKeyConfigured) {
+		if (this._hasFeatherlessCredentials()) {
 			return true;
 		}
 
@@ -323,7 +339,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		if (!key) {
 			this.featherlessApiKeyInputBox?.showMessage({
 				type: MessageType.ERROR,
-				content: localize('onboarding.featherlessApiKey.required', "Enter your Featherless.ai API key to continue."),
+				content: localize('onboarding.featherlessApiKey.required', "Sign in with Featherless or enter your API key to continue."),
 			});
 			return false;
 		}
@@ -372,12 +388,20 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 				this.chatEntitlementService,
 				this.productService,
 				this.logService,
+				this.commandService,
 			);
 			await this.commandService.executeCommand(FEATHERLESS_EXTENSION_SET_KEY_COMMAND, key);
+			await this.commandService.executeCommand(FEATHERLESS_EXTENSION_BOOTSTRAP_COMMAND);
 		} catch (err) {
-			// Key is already in secret storage; provider registration can happen later.
 			this.logService.warn(`[onboarding] Featherless activation deferred: ${err instanceof Error ? err.message : String(err)}`);
 		}
+	}
+
+	private async _readFeatherlessOAuthFromStorage(): Promise<boolean> {
+		const value = await this.secretStorageService.get(
+			getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_OAUTH_ACCESS_TOKEN_SECRET),
+		);
+		return !!value?.trim();
 	}
 
 	private async _readFeatherlessApiKeyFromStorage(): Promise<string | undefined> {
@@ -387,15 +411,134 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		return value?.trim() || undefined;
 	}
 
-	private async _refreshFeatherlessApiKeyState(): Promise<void> {
-		const wasConfigured = this.featherlessApiKeyConfigured;
+	private async _refreshFeatherlessApiKeyState(): Promise<boolean> {
 		this.featherlessApiKeyConfigured = !!(await this._readFeatherlessApiKeyFromStorage());
+		this.featherlessOAuthConfigured = await this._readFeatherlessOAuthFromStorage();
 
-		if (!wasConfigured && this.featherlessApiKeyConfigured && this.steps[this.currentStepIndex] === OnboardingStepId.FeatherlessApiKey) {
-			this._renderStep();
+		// Prefer the extension's view of credentials when secret-storage reads race or miss.
+		if (!this._hasFeatherlessCredentials()) {
+			try {
+				const hasFromExtension = await this.commandService.executeCommand<boolean>(FEATHERLESS_EXTENSION_HAS_KEY_COMMAND);
+				if (hasFromExtension) {
+					this.featherlessOAuthConfigured = true;
+				}
+			} catch {
+				// Extension may not be activated yet.
+			}
+		}
+
+		this._updateButtonStates();
+		return this._hasFeatherlessCredentials();
+	}
+
+	private async _signInWithFeatherlessOAuthFromWizard(oauthBtn?: HTMLButtonElement, oauthLabel?: HTMLElement): Promise<void> {
+		const originalLabel = oauthLabel?.textContent;
+		if (oauthBtn) {
+			oauthBtn.disabled = true;
+			if (oauthLabel) {
+				oauthLabel.textContent = localize('onboarding.featherlessApiKey.signingIn', "Opening browser…");
+			}
+		}
+		if (this.nextButton) {
+			this.nextButton.disabled = true;
+		}
+		// Hide the welcome overlay so the integrated browser can use the full window
+		// (and expose the editor tab close button). Restore when sign-in finishes.
+		this._setOnboardingOverlayHiddenForOAuth(true);
+		this._setChatPanelHiddenForOAuth(true);
+		let signedIn = false;
+		try {
+			await this._ensureFeatherlessExtensionReady();
+			await this.commandService.executeCommand(FEATHERLESS_EXTENSION_SIGN_IN_COMMAND);
+			await this.commandService.executeCommand(FEATHERLESS_EXTENSION_BOOTSTRAP_COMMAND);
+			signedIn = await this._refreshFeatherlessApiKeyState();
+			if (!signedIn) {
+				this.featherlessApiKeyInputBox?.showMessage({
+					type: MessageType.ERROR,
+					content: localize('onboarding.featherlessApiKey.oauthFailed', "Featherless sign-in did not complete. Try again or paste an API key."),
+				});
+			}
+		} catch (err) {
+			const detail = err instanceof Error ? err.message : String(err);
+			this.featherlessApiKeyInputBox?.showMessage({
+				type: MessageType.ERROR,
+				content: localize('onboarding.featherlessApiKey.oauthFailed', "Featherless sign-in did not complete. Try again or paste an API key."),
+			});
+			// Toast is already shown by omenide.signInFeatherless; log for diagnostics.
+			this.logService.warn(`[onboarding] Featherless OAuth failed: ${detail}`);
+		} finally {
+			// Close any leftover OAuth browser tabs first, then bring the wizard back.
+			// Restoring the overlay while the error page is still open bricks the UI.
+			try {
+				await this.commandService.executeCommand('workbench.action.browser.closeAll');
+			} catch {
+				// Browser tabs may already be closed by the auth service.
+			}
+			await timeout(50);
+			this._setChatPanelHiddenForOAuth(false);
+			this._setOnboardingOverlayHiddenForOAuth(false);
+			if (oauthBtn) {
+				oauthBtn.disabled = false;
+				if (oauthLabel && originalLabel) {
+					oauthLabel.textContent = originalLabel;
+				}
+			}
+			if (this.nextButton) {
+				this.nextButton.disabled = false;
+			}
+			this._updateButtonStates();
+		}
+
+		if (signedIn && this.steps[this.currentStepIndex] === OnboardingStepId.FeatherlessApiKey) {
+			this._advanceFromCurrentStep();
+		}
+	}
+
+	private _setOnboardingOverlayHiddenForOAuth(hidden: boolean): void {
+		if (!this.overlay) {
 			return;
 		}
-		this._updateButtonStates();
+		this.overlay.classList.toggle('oauth-browser-active', hidden);
+		this.overlay.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+	}
+
+	private _setChatPanelHiddenForOAuth(hidden: boolean): void {
+		if (hidden) {
+			this._auxBarWasVisibleBeforeOAuth = this.layoutService.isVisible(Parts.AUXILIARYBAR_PART);
+			if (this._auxBarWasVisibleBeforeOAuth) {
+				this.layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
+			}
+			return;
+		}
+		if (this._auxBarWasVisibleBeforeOAuth) {
+			this.layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
+		}
+		this._auxBarWasVisibleBeforeOAuth = undefined;
+	}
+
+	private async _ensureFeatherlessExtensionReady(): Promise<void> {
+		const deadline = Date.now() + 8_000;
+		let lastError: unknown;
+		while (Date.now() < deadline) {
+			await ensureFeatherlessChatExtensionReady(
+				this.extensionsWorkbenchService,
+				this.extensionService,
+				this.chatEntitlementService,
+				this.productService,
+				this.logService,
+				this.commandService,
+			);
+			try {
+				// Probe a lightweight BYOK command to confirm the extension host registered handlers.
+				await this.commandService.executeCommand(FEATHERLESS_EXTENSION_HAS_KEY_COMMAND);
+				return;
+			} catch (err) {
+				lastError = err;
+				await timeout(150);
+			}
+		}
+		const detail = lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown error');
+		throw new Error(localize('onboarding.featherlessApiKey.extensionNotReady', "Omen IDE extension is not ready yet ({0}). Try again in a moment.", detail));
 	}
 
 	private _dismiss(reason: 'complete' | 'skip'): void {
@@ -540,12 +683,14 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			this.backButton.style.display = this.currentStepIndex === 0 ? 'none' : '';
 		}
 		if (this.nextButton) {
+			const onFeatherlessAuthStep = this.steps[this.currentStepIndex] === OnboardingStepId.FeatherlessApiKey;
+			const hideFooterContinue = onFeatherlessAuthStep && !this._hasFeatherlessCredentials();
+			this.nextButton.style.display = hideFooterContinue ? 'none' : '';
 			this.nextButton.className = 'onboarding-a-btn onboarding-a-btn-primary';
 			this.nextButton.textContent = this._isLastStep()
 				? localize('onboarding.getStarted', "Get Started")
 				: localize('onboarding.next', "Continue");
-			// Always clickable; the Featherless step validates emptiness in its
-			// handler and shows an inline message so the button is never a dead end.
+			// Always clickable when visible; Featherless key Submit validates in-step.
 			this.nextButton.disabled = false;
 			this.nextButton.style.opacity = '';
 		}
@@ -573,19 +718,36 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		title.textContent = localize('onboarding.featherlessApiKey.heroTitle', "Welcome to Omen IDE");
 
 		const subtitle = append(contentMain, $('p.onboarding-a-signin-subtitle'));
-		subtitle.textContent = localize('onboarding.featherlessApiKey.heroSubtitle', "Omen IDE runs on Featherless.ai. Paste your API key to enable chat, agents, and Tab autocomplete.");
+		subtitle.textContent = localize('onboarding.featherlessApiKey.heroSubtitle', "Sign in with Featherless or paste an API key to enable chat, agents, and Tab autocomplete.");
 
-		const actions = append(contentMain, $('.onboarding-a-signin-actions'));
+		const actions = append(contentMain, $('.onboarding-a-signin-actions.onboarding-a-featherless-auth-stack'));
 
-		if (this.featherlessApiKeyConfigured) {
+		if (this._hasFeatherlessCredentials()) {
 			const saved = append(actions, $('.onboarding-a-signin-confirmation'));
 			const icon = append(saved, $('span'));
 			icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.check));
 			icon.setAttribute('aria-hidden', 'true');
 			const text = append(saved, $('span'));
-			text.textContent = localize('onboarding.featherlessApiKey.saved', "API key saved. You can continue to the next step.");
+			text.textContent = this.featherlessOAuthConfigured
+				? localize('onboarding.featherlessApiKey.oauthSaved', "Signed in with Featherless. Continuing…")
+				: localize('onboarding.featherlessApiKey.saved', "API key saved. Continuing…");
 		} else {
-			const inputContainer = append(actions, $('.onboarding-a-signin-ghe-input'));
+			const oauthBtn = this._registerStepFocusable(append(actions, $<HTMLButtonElement>('button.onboarding-a-signin-btn.primary')));
+			oauthBtn.type = 'button';
+			oauthBtn.title = localize('onboarding.featherlessApiKey.signIn', "Sign in with Featherless");
+			oauthBtn.setAttribute('aria-label', localize('onboarding.featherlessApiKey.signIn', "Sign in with Featherless"));
+			const oauthLabel = append(oauthBtn, $('span.onboarding-a-signin-btn-label'));
+			oauthLabel.textContent = localize('onboarding.featherlessApiKey.signIn', "Sign in with Featherless");
+			this.stepDisposables.add(addDisposableListener(oauthBtn, EventType.CLICK, () => {
+				this._logAction('signIn', undefined, 'featherless-oauth');
+				void this._signInWithFeatherlessOAuthFromWizard(oauthBtn, oauthLabel);
+			}));
+
+			const divider = append(actions, $('.onboarding-a-signin-or-divider'));
+			divider.textContent = localize('onboarding.featherlessApiKey.or', "or");
+
+			const keyRow = append(actions, $('.onboarding-a-featherless-key-row'));
+			const inputContainer = append(keyRow, $('.onboarding-a-signin-ghe-input'));
 			const inputBox = this.stepDisposables.add(new InputBox(inputContainer, undefined, {
 				placeholder: localize('onboarding.featherlessApiKey.placeholder', 'Paste your Featherless.ai API key'),
 				ariaLabel: localize('onboarding.featherlessApiKey.inputAria', "Featherless API key"),
@@ -606,6 +768,15 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 					void this._handleNextClick();
 				}
 			}));
+
+			const submitBtn = this._registerStepFocusable(append(keyRow, $<HTMLButtonElement>('button.onboarding-a-btn.onboarding-a-btn-primary.onboarding-a-featherless-submit')));
+			submitBtn.type = 'button';
+			submitBtn.textContent = localize('onboarding.featherlessApiKey.submit', "Submit");
+			submitBtn.setAttribute('aria-label', localize('onboarding.featherlessApiKey.submit', "Submit"));
+			this.stepDisposables.add(addDisposableListener(submitBtn, EventType.CLICK, () => {
+				this._logAction('next', undefined, 'featherless-api-key-submit');
+				void this._handleNextClick();
+			}));
 		}
 
 		const footer = append(wrapper, $('.onboarding-a-signin-footer'));
@@ -614,7 +785,11 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		disclaimer.append(localize('onboarding.featherlessApiKey.getKeyPrefix', "Don't have a key yet? "));
 		this._createInlineLink(disclaimer, localize('onboarding.featherlessApiKey.getKey', "Get one from Featherless.ai"), 'https://featherless.ai/account/api-keys');
 
-		void this._refreshFeatherlessApiKeyState();
+		void this._refreshFeatherlessApiKeyState().then(ready => {
+			if (ready && this.steps[this.currentStepIndex] === OnboardingStepId.FeatherlessApiKey) {
+				this._advanceFromCurrentStep();
+			}
+		});
 	}
 
 	// =====================================================================

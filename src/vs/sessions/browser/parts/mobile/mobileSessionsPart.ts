@@ -50,9 +50,10 @@ export class MobileSessionsPart extends SessionsPart {
 
 		this._lastLayout = { width, height, top, left };
 
-		// Full dimensions - no card margins or session-bar subtraction.
+		// Full dimensions - no card margins; subtract session tab strip height.
 		const { contentSize } = this.layoutContents(width, height);
-		this._gridWidget?.layout(contentSize.width, contentSize.height, top, left);
+		const tabBarHeight = this._sessionCompositeBar?.height ?? 0;
+		this._gridWidget?.layout(contentSize.width, Math.max(0, contentSize.height - tabBarHeight), top, left);
 		Part.prototype.layout.call(this, width, height, top, left);
 	}
 }

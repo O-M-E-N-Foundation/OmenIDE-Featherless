@@ -2,7 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-import { commands, LanguageModelChatInformation, LanguageModelChatProvider, lm, window } from 'vscode';
+import { commands, LanguageModelChatInformation, LanguageModelChatProvider, lm, QuickPickItem, window } from 'vscode';
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
 import { ILogService } from '../../../platform/log/common/logService';
@@ -17,23 +17,34 @@ import { AzureBYOKModelProvider } from './azureProvider';
 import { BYOKStorageService, IBYOKStorageService } from './byokStorageService';
 import { CustomEndpointBYOKModelProvider } from './customEndpointProvider';
 import { CustomOAIBYOKModelProvider } from './customOAIProvider';
-import { FeatherlessBYOKLMProvider } from './featherlessProvider';
-import { OmenIDEDefaults } from '../../omenide/common/omenideConfig';
+import { FeatherlessBYOKLMProvider, setFeatherlessAuthService } from './featherlessProvider';
+import { resolveOmenOAuthBrokerBaseUrl } from '../../omenide/common/featherlessOAuth';
+import { FeatherlessAuthService } from '../../omenide/vscode-node/featherlessAuthService';
 import { GeminiNativeBYOKLMProvider } from './geminiNativeProvider';
 import { OllamaLMProvider } from './ollamaProvider';
 import { OAIBYOKLMProvider } from './openAIProvider';
 import { OpenRouterLMProvider } from './openRouterProvider';
 import { XAIBYOKLMProvider } from './xAIProvider';
 
+export type FeatherlessBootstrapStatus = 'no-credentials' | 'ready' | 'error';
+
+export interface FeatherlessBootstrapResult {
+	readonly status: FeatherlessBootstrapStatus;
+	readonly error?: string;
+}
+
+const FEATHERLESS_CREDENTIALS_CONTEXT_KEY = 'omenide.hasFeatherlessCredentials';
+
 export class BYOKContrib extends Disposable implements IExtensionContribution {
 	public readonly id: string = 'byok-contribution';
 	private readonly _byokStorageService: IBYOKStorageService;
+	private readonly _featherlessAuthService: FeatherlessAuthService;
 	private readonly _providers: Map<string, LanguageModelChatProvider<LanguageModelChatInformation>> = new Map();
 	private readonly _providerRegistrations = this._register(new DisposableStore());
 	private _providersRegistered = false;
-	private _featherlessGroupEnsured = false;
 	private _knownModelsRefreshed = false;
 	private _knownModelsRefreshTargets: ReadonlyArray<readonly [string, AbstractLanguageModelChatProvider]> = [];
+	private _bootstrapInFlight: Promise<FeatherlessBootstrapResult> | undefined;
 
 	constructor(
 		@IFetcherService private readonly _fetcherService: IFetcherService,
@@ -44,12 +55,20 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 	) {
 		super();
 		this._byokStorageService = new BYOKStorageService(extensionContext);
-		this._register(commands.registerCommand('omenide.configureFeatherlessApiKey', () => this._promptFeatherlessApiKeyIfNeeded(true)));
-		this._register(commands.registerCommand('omenide.resetFeatherlessApiKey', () => this._resetFeatherlessApiKey()));
-		this._register(commands.registerCommand('omenide.hasFeatherlessApiKey', () => this._hasFeatherlessApiKey()));
+		this._featherlessAuthService = new FeatherlessAuthService(extensionContext, this._byokStorageService, this._fetcherService, this._logService);
+		setFeatherlessAuthService(this._featherlessAuthService);
+		this._register(commands.registerCommand('omenide.configureFeatherlessApiKey', () => this._configureFeatherlessCredentials(true)));
+		this._register(commands.registerCommand('omenide.signInFeatherless', () => this._signInFeatherlessOAuth()));
+		this._register(commands.registerCommand('omenide.resetFeatherlessApiKey', () => this._resetFeatherlessCredentials()));
+		this._register(commands.registerCommand('omenide.signOutFeatherless', () => this._signOutFeatherless()));
+		this._register(commands.registerCommand('omenide.hasFeatherlessApiKey', () => this._hasFeatherlessCredentials()));
 		this._register(commands.registerCommand('omenide.setFeatherlessApiKey', (apiKey?: string) => this._setFeatherlessApiKey(apiKey)));
+		this._register(commands.registerCommand('omenide.bootstrapFeatherlessModels', () => this._bootstrapFeatherlessModels()));
+		this._register(commands.registerCommand('omenide.getFeatherlessAccountSummary', () => this._featherlessAuthService.getAccountSummary()));
+		this._register(commands.registerCommand('omenide.listFeatherlessModels', (query?: unknown) => this._featherlessAuthService.listModelsForSettings((query && typeof query === 'object') ? query as Parameters<typeof this._featherlessAuthService.listModelsForSettings>[0] : {})));
 		this._applyPolicy();
 		this._register(this._authService.onDidAuthenticationChange(() => this._applyPolicy()));
+		void this._updateFeatherlessCredentialsContext();
 	}
 
 	private _buildProviders(): void {
@@ -80,7 +99,6 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 	}
 
 	private _applyPolicy(): void {
-		// OmenIDE: always register BYOK providers (Featherless, etc.) without GitHub/Copilot auth.
 		if (!this._providersRegistered) {
 			if (this._providers.size === 0) {
 				this._buildProviders();
@@ -91,13 +109,6 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 			this._providersRegistered = true;
 			this._logService.info(`BYOK: registered ${this._providers.size} provider(s): ${Array.from(this._providers.keys()).join(', ')}`);
 
-			// Ensure a non-Copilot (Featherless) provider group exists even before
-			// the user has entered an API key. The UI gating for the chat model
-			// picker (hasByokModels) depends on provider groups existing, not just
-			// providers being registered.
-			// This must be best-effort and must NOT require a valid apiKey.
-			void this._ensureFeatherlessProviderGroup();
-
 			if (!this._knownModelsRefreshed) {
 				this._knownModelsRefreshed = true;
 				void this._refreshKnownModels().catch(err => {
@@ -105,54 +116,59 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 					this._logService.warn(`BYOK: failed to refresh known models, will retry on next allowed transition: ${err instanceof Error ? err.message : String(err)}`);
 				});
 			}
-			// Featherless API key is collected in the first-run onboarding wizard; do not
-			// show a separate deferred prompt that competes with that modal.
+
+			void this._bootstrapFeatherlessModels();
 		}
 	}
 
-	private async _ensureFeatherlessProviderGroup(): Promise<void> {
-		if (this._featherlessGroupEnsured) {
-			return;
+	private async _updateFeatherlessCredentialsContext(): Promise<void> {
+		const hasCredentials = await this._featherlessAuthService.hasCredentials();
+		await commands.executeCommand('setContext', FEATHERLESS_CREDENTIALS_CONTEXT_KEY, hasCredentials);
+	}
+
+	private async _bootstrapFeatherlessModels(): Promise<FeatherlessBootstrapResult> {
+		if (this._bootstrapInFlight) {
+			return this._bootstrapInFlight;
 		}
 
-		this._featherlessGroupEnsured = true;
-		// The group is the sole source of Featherless models (the groupless
-		// resolution pass intentionally returns none — see FeatherlessBYOKLMProvider),
-		// so retry transient failures (e.g. the config service not being ready yet)
-		// instead of leaving the model picker permanently empty.
-		for (let attempt = 0; attempt < 3; attempt++) {
-			if (attempt > 0) {
-				await new Promise<void>(resolve => setTimeout(resolve, 2000 * attempt));
-			}
-			try {
-				await commands.executeCommand('lm.addLanguageModelsProviderGroup', {
-					name: FeatherlessBYOKLMProvider.providerName,
-					vendor: FeatherlessBYOKLMProvider.providerId,
-					// Minimal settings scaffold: group existence is what the model-picker
-					// gate cares about. The actual API key is handled separately.
-					settings: {
-						[OmenIDEDefaults.chatModel]: {},
-					},
-				});
-				this._logService.info('BYOK: ensured Featherless language-model provider group (keyless warm UI)');
-				return;
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				if (message.includes('already exists')) {
-					this._logService.debug('BYOK: featherless provider group already exists');
-					return;
-				}
-				this._logService.warn(`BYOK: featherless provider group ensure failed (attempt ${attempt + 1}): ${message}`);
-			}
+		this._bootstrapInFlight = this._doBootstrapFeatherlessModels();
+		try {
+			return await this._bootstrapInFlight;
+		} finally {
+			this._bootstrapInFlight = undefined;
 		}
 	}
 
-	private async _hasFeatherlessApiKey(): Promise<boolean> {
+	private async _doBootstrapFeatherlessModels(): Promise<FeatherlessBootstrapResult> {
+		await this._seedApiKeyFromEnvironment();
+		await this._updateFeatherlessCredentialsContext();
+
+		const token = await this._featherlessAuthService.getBearerToken();
+		if (!token) {
+			this._logService.trace('BYOK: Featherless bootstrap skipped — no credentials');
+			return { status: 'no-credentials' };
+		}
+
+		try {
+			await commands.executeCommand('lm.migrateLanguageModelsProviderGroup', {
+				vendor: FeatherlessBYOKLMProvider.providerId,
+				name: FeatherlessBYOKLMProvider.providerName,
+				apiKey: token,
+			});
+			this._logService.info('BYOK: Featherless models bootstrapped from API');
+			return { status: 'ready' };
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this._logService.warn(`BYOK: Featherless bootstrap failed: ${message}`);
+			return { status: 'error', error: message };
+		}
+	}
+
+	private async _hasFeatherlessCredentials(): Promise<boolean> {
 		if (await this._seedApiKeyFromEnvironment()) {
 			return true;
 		}
-		const apiKey = await this._byokStorageService.getAPIKey(FeatherlessBYOKLMProvider.providerName);
-		return !!apiKey?.trim();
+		return this._featherlessAuthService.hasCredentials();
 	}
 
 	private async _setFeatherlessApiKey(apiKey?: string): Promise<void> {
@@ -164,32 +180,39 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 	}
 
 	private async _storeFeatherlessApiKey(key: string): Promise<void> {
-		// Persisting the key is the operation that must succeed. If it fails, the
-		// caller should surface an error.
+		await this._featherlessAuthService.markApiKeyAuth();
 		await this._byokStorageService.storeAPIKey(FeatherlessBYOKLMProvider.providerName, key, BYOKAuthType.GlobalApiKey);
 		this._logService.info('BYOK: saved Featherless API key');
-
-		// Registering/validating the provider group is a best-effort follow-up. It
-		// performs a live model lookup that can throw if the provider isn't ready
-		// yet or the network is briefly unavailable; that must not fail the save.
-		try {
-			await commands.executeCommand('lm.migrateLanguageModelsProviderGroup', {
-				vendor: FeatherlessBYOKLMProvider.providerId,
-				name: FeatherlessBYOKLMProvider.providerName,
-				apiKey: key,
-			});
-		} catch (err) {
-			this._logService.warn(`BYOK: Featherless provider group migration deferred: ${err instanceof Error ? err.message : String(err)}`);
+		await this._updateFeatherlessCredentialsContext();
+		const result = await this._bootstrapFeatherlessModels();
+		if (result.status === 'error') {
+			this._logService.warn(`BYOK: Featherless model discovery after key save failed: ${result.error}`);
 		}
 	}
 
-	private async _resetFeatherlessApiKey(): Promise<void> {
+	private async _resetFeatherlessCredentials(): Promise<void> {
 		try {
 			await this._byokStorageService.deleteAPIKey(FeatherlessBYOKLMProvider.providerName, BYOKAuthType.GlobalApiKey);
-			this._logService.info('BYOK: cleared Featherless API key (first-run reset)');
+			await this._featherlessAuthService.clearAllCredentials();
+			await this._updateFeatherlessCredentialsContext();
+			try {
+				await commands.executeCommand('lm.migrateLanguageModelsProviderGroup', {
+					vendor: FeatherlessBYOKLMProvider.providerId,
+					name: FeatherlessBYOKLMProvider.providerName,
+					apiKey: '',
+				});
+			} catch {
+				// Group may not exist yet; clearing credentials is sufficient.
+			}
+			this._logService.info('BYOK: cleared Featherless credentials');
 		} catch (err) {
-			this._logService.warn(`BYOK: failed to clear Featherless API key: ${err instanceof Error ? err.message : String(err)}`);
+			this._logService.warn(`BYOK: failed to clear Featherless credentials: ${err instanceof Error ? err.message : String(err)}`);
 		}
+	}
+
+	private async _signOutFeatherless(): Promise<void> {
+		await this._resetFeatherlessCredentials();
+		window.showInformationMessage('Signed out of Featherless.');
 	}
 
 	private async _seedApiKeyFromEnvironment(): Promise<boolean> {
@@ -203,55 +226,110 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 			return false;
 		}
 
-		await this._storeFeatherlessApiKey(envKey.trim());
+		await this._featherlessAuthService.markApiKeyAuth();
+		await this._byokStorageService.storeAPIKey(FeatherlessBYOKLMProvider.providerName, envKey.trim(), BYOKAuthType.GlobalApiKey);
+		await this._updateFeatherlessCredentialsContext();
 		this._logService.info('BYOK: seeded Featherless API key from environment');
 		return true;
 	}
 
-	private async _promptFeatherlessApiKeyIfNeeded(force = false): Promise<void> {
-		// When invoked explicitly (force), always prompt so an existing (possibly
-		// invalid) key can be replaced. Otherwise only prompt when no key exists.
-		if (!force) {
-			if (await this._seedApiKeyFromEnvironment()) {
-				return;
-			}
-
-			const apiKey = await this._byokStorageService.getAPIKey(FeatherlessBYOKLMProvider.providerName);
-			if (apiKey) {
-				return;
-			}
-
-			await window.showInformationMessage(
-				'Welcome to Omen IDE! Enter your Featherless.ai API key to use GLM-5.2 for chat, agents, and codebase search.',
-				{ modal: true },
-			);
+	private async _signInFeatherlessOAuth(): Promise<void> {
+		try {
+			await this._featherlessAuthService.signInWithOAuth();
+			await this._updateFeatherlessCredentialsContext();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this._logService.warn(`BYOK: Featherless OAuth sign-in failed: ${message}`);
+			const brokerBase = resolveOmenOAuthBrokerBaseUrl();
+			const hint = message.includes('broker') || message.includes('timed out') || message.includes('not configured') || message.includes('session')
+				? message
+				: `${message}\n\nOAuth is brokered by ${brokerBase}. For local backend set OMEN_OAUTH_BROKER_BASE_URL=http://localhost:3001.`;
+			window.showErrorMessage(hint);
+			// Re-throw so onboarding (and other callers) can detect failure and avoid advancing.
+			throw err instanceof Error ? err : new Error(message);
 		}
 
+		// Token storage succeeded — model discovery is best-effort and must not undo sign-in.
+		const result = await this._bootstrapFeatherlessModels();
+		if (result.status === 'error') {
+			this._logService.warn(`BYOK: Featherless model discovery after OAuth failed: ${result.error}`);
+			window.showWarningMessage(`Signed in to Featherless, but model discovery failed: ${result.error ?? 'unknown error'}. Try reloading the window.`);
+			return;
+		}
+		window.showInformationMessage('Signed in to Featherless. Your models are ready in the picker.');
+	}
+
+	private async _configureFeatherlessCredentials(force = false): Promise<void> {
+		if (!force) {
+			if (await this._seedApiKeyFromEnvironment()) {
+				await this._bootstrapFeatherlessModels();
+				return;
+			}
+			if (await this._featherlessAuthService.hasCredentials()) {
+				return;
+			}
+		}
+
+		type FeatherlessAuthPick = QuickPickItem & { id: 'oauth' | 'apikey' | 'signout' };
+		const hasCredentials = await this._featherlessAuthService.hasCredentials();
+		const items: FeatherlessAuthPick[] = [
+			{
+				id: 'oauth',
+				label: 'Sign in with Featherless',
+				description: 'Open your browser to authorize Omen IDE',
+			},
+			{
+				id: 'apikey',
+				label: 'Enter API Key',
+				description: 'Paste a key from featherless.ai/account/api-keys',
+			},
+		];
+		if (hasCredentials) {
+			items.push({
+				id: 'signout',
+				label: 'Sign out / Clear credentials',
+				description: 'Remove stored API key and OAuth tokens',
+			});
+		}
+
+		const choice = await window.showQuickPick(items, {
+			title: 'Connect Featherless.ai',
+			placeHolder: 'Sign in with OAuth or enter an API key',
+			ignoreFocusOut: true,
+		});
+		if (!choice) {
+			return;
+		}
+
+		switch (choice.id) {
+			case 'oauth':
+				await this._signInFeatherlessOAuth();
+				break;
+			case 'apikey':
+				await this._promptFeatherlessApiKey();
+				break;
+			case 'signout':
+				await this._resetFeatherlessCredentials();
+				window.showInformationMessage('Featherless credentials cleared.');
+				break;
+		}
+	}
+
+	private async _promptFeatherlessApiKey(): Promise<void> {
 		const key = await window.showInputBox({
-			title: force ? 'Featherless API Key' : 'Welcome to Omen IDE',
-			prompt: 'Enter your Featherless.ai API key to chat with GLM-5.2',
+			title: 'Featherless API Key',
+			prompt: 'Enter your Featherless.ai API key',
 			password: true,
 			ignoreFocusOut: true,
 			placeHolder: 'Featherless API key',
 		});
 
 		if (!key?.trim()) {
-			if (force) {
-				return;
-			}
-			const configure = await window.showWarningMessage(
-				'Featherless API key is required for AI features.',
-				'Enter API Key',
-				'Later',
-			);
-			if (configure === 'Enter API Key') {
-				await this._promptFeatherlessApiKeyIfNeeded(true);
-			}
 			return;
 		}
 
 		await this._storeFeatherlessApiKey(key.trim());
-		window.showInformationMessage('Featherless API key saved. Select GLM-5.2 in the model picker to start chatting.');
+		window.showInformationMessage('Featherless connected. Your models are ready in the picker.');
 	}
 
 	private async _refreshKnownModels(): Promise<void> {
@@ -267,8 +345,6 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 	private async _fetchKnownModelList(fetcherService: IFetcherService): Promise<Record<string, BYOKKnownModels>> {
 		this._logService.info('BYOK: fetching known models list');
 		const data = await (await fetcherService.fetch('https://main.vscode-cdn.net/extensions/copilotChat.json', { method: 'GET', callSite: 'byok-known-models' })).json();
-		// Use this for testing with changes from a local file. Don't check in
-		// const data = JSON.parse((await this._fileSystemService.readFile(URI.file('/Users/roblou/code/vscode-engineering/chat/copilotChat.json'))).toString());
 		if (data.version !== 1) {
 			this._logService.warn('BYOK: Copilot Chat known models list is not in the expected format. Defaulting to empty list.');
 			return {};

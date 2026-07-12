@@ -1,6 +1,7 @@
 ---
 name: Agents Window Developer
 description: Specialist in developing the Agents Window
+user-invocable: false
 ---
 
 # Role and Objective

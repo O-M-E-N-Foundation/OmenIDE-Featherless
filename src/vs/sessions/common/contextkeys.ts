@@ -50,6 +50,7 @@ export const ActiveSessionsContext = new RawContextKey<string>('activeSessions',
 export const SessionsFocusContext = new RawContextKey<boolean>('sessionsFocus', false, localize('sessionsFocus', "Whether the sessions part has keyboard focus"));
 export const SessionsVisibleContext = new RawContextKey<boolean>('sessionsVisible', false, localize('sessionsVisible', "Whether the sessions part is visible"));
 export const MultipleSessionsVisibleContext = new RawContextKey<boolean>('multipleSessionsVisible', false, localize('multipleSessionsVisible', "Whether more than one session is visible in the sessions part's grid"));
+export const MultipleSessionTabsVisibleContext = new RawContextKey<boolean>('multipleSessionTabsVisible', false, localize('multipleSessionTabsVisible', "Whether more than one session tab is open in the sessions part (Cursor-style tab strip), including when only one pane is shown"));
 
 //#endregion
 

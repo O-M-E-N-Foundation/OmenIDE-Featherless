@@ -4,8 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { VSBuffer } from '../../../../../../base/common/buffer.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { ResourceMap } from '../../../../../../base/common/map.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { IEnvironmentService } from '../../../../../../platform/environment/common/environment.js';
@@ -14,6 +16,7 @@ import { ServiceCollection } from '../../../../../../platform/instantiation/comm
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
 import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
+import { ChatConfiguration } from '../../../common/constants.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { NullTelemetryService } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { IUserDataProfilesService, toUserDataProfile } from '../../../../../../platform/userDataProfile/common/userDataProfile.js';
@@ -21,7 +24,8 @@ import { IAnyWorkspaceIdentifier, IWorkspaceContextService, WorkspaceFolder } fr
 import { TestWorkspace, Workspace } from '../../../../../../platform/workspace/test/common/testWorkspace.js';
 import { ILifecycleService } from '../../../../../services/lifecycle/common/lifecycle.js';
 import { IDidEnterWorkspaceEvent, IWorkspaceEditingService } from '../../../../../services/workspaces/common/workspaceEditing.js';
-import { InMemoryTestFileService, TestContextService, TestLifecycleService, TestStorageService } from '../../../../../test/common/workbenchTestServices.js';
+import { dirname, isEqual, joinPath } from '../../../../../../base/common/resources.js';
+import { InMemoryTestFileService, TestContextService, TestLifecycleService, TestStorageService, createFileStat } from '../../../../../test/common/workbenchTestServices.js';
 import { ChatModel, ISerializableChatData3 } from '../../../common/model/chatModel.js';
 import { ChatSessionStore, IChatTransfer } from '../../../common/model/chatSessionStore.js';
 import { LocalChatSessionUri } from '../../../common/model/chatUri.js';
@@ -41,6 +45,36 @@ function createMockChatModel(sessionResource: URI, options?: { customTitle?: str
 	}
 	// Cast to ChatModel - the mock implements enough of the interface for testing
 	return model as unknown as ChatModel;
+}
+
+/**
+ * In-memory file service that can list directory children from written files,
+ * needed for ChatSessionStore index recovery tests.
+ */
+class ListingInMemoryTestFileService extends InMemoryTestFileService {
+	private readonly trackedFiles = new ResourceMap<URI>();
+
+	override async writeFile(resource: URI, bufferOrReadable: VSBuffer | { read(): VSBuffer | null }, options?: object): Promise<ReturnType<typeof createFileStat>> {
+		const result = await super.writeFile(resource, bufferOrReadable as never, options as never);
+		this.trackedFiles.set(resource, resource);
+		this.notExistsSet.delete(resource);
+		return result;
+	}
+
+	override async del(resource: URI, options?: { useTrash?: boolean; recursive?: boolean }): Promise<void> {
+		await super.del(resource, options);
+		this.trackedFiles.delete(resource);
+	}
+
+	override async resolve(resource: URI): Promise<ReturnType<typeof createFileStat>> {
+		const children: { resource: URI; isFile: boolean }[] = [];
+		for (const child of this.trackedFiles.values()) {
+			if (isEqual(dirname(child), resource) || dirname(child).fsPath.toLowerCase() === resource.fsPath.toLowerCase()) {
+				children.push({ resource: child, isFile: true });
+			}
+		}
+		return createFileStat(resource, false, false, true, false, children);
+	}
 }
 
 class MockWorkspaceEditingService extends Disposable implements Partial<IWorkspaceEditingService> {
@@ -64,6 +98,9 @@ suite('ChatSessionStore', () => {
 
 	let instantiationService: TestInstantiationService;
 	let mockWorkspaceEditingService: MockWorkspaceEditingService;
+	let configurationService: TestConfigurationService;
+
+	const msPerDay = 24 * 60 * 60 * 1000;
 
 	function createChatSessionStore(isEmptyWindow: boolean = false): ChatSessionStore {
 		const workspace = isEmptyWindow ? new Workspace('empty-window-id', []) : TestWorkspace;
@@ -76,11 +113,12 @@ suite('ChatSessionStore', () => {
 		instantiationService.stub(IStorageService, testDisposables.add(new TestStorageService()));
 		instantiationService.stub(ILogService, NullLogService);
 		instantiationService.stub(ITelemetryService, NullTelemetryService);
-		instantiationService.stub(IFileService, testDisposables.add(new InMemoryTestFileService()));
+		instantiationService.stub(IFileService, testDisposables.add(new ListingInMemoryTestFileService()));
 		instantiationService.stub(IEnvironmentService, { workspaceStorageHome: URI.file('/test/workspaceStorage') });
 		instantiationService.stub(ILifecycleService, testDisposables.add(new TestLifecycleService()));
 		instantiationService.stub(IUserDataProfilesService, { defaultProfile: toUserDataProfile('default', 'Default', URI.file('/test/userdata'), URI.file('/test/cache')) });
-		instantiationService.stub(IConfigurationService, new TestConfigurationService());
+		configurationService = new TestConfigurationService();
+		instantiationService.stub(IConfigurationService, configurationService);
 		mockWorkspaceEditingService = testDisposables.add(new MockWorkspaceEditingService());
 		instantiationService.stub(IWorkspaceEditingService, mockWorkspaceEditingService as unknown as IWorkspaceEditingService);
 	});
@@ -225,6 +263,88 @@ suite('ChatSessionStore', () => {
 		const folder2 = store2.getChatStorageFolder();
 
 		assert.notStrictEqual(folder1.toString(), folder2.toString());
+	});
+
+	suite('history retention', () => {
+		function setSessionAge(model: ChatModel, ageMs: number): void {
+			const timestamp = Date.now() - ageMs;
+			const mock = model as unknown as MockChatModel;
+			mock.lastMessageDate = timestamp;
+			mock.creationDate = timestamp;
+		}
+
+		test('keeps sessions within retention window', async () => {
+			await configurationService.setUserConfiguration(ChatConfiguration.HistoryRetentionDays, 30);
+			const store = createChatSessionStore();
+			const model = testDisposables.add(createMockChatModel(LocalChatSessionUri.forSession('recent-session')));
+			setSessionAge(model, 5 * msPerDay);
+
+			await store.storeSessions([model]);
+
+			const index = await store.getIndex();
+			assert.ok(index['recent-session']);
+		});
+
+		test('deletes sessions older than retention days including files', async () => {
+			await configurationService.setUserConfiguration(ChatConfiguration.HistoryRetentionDays, 30);
+			const store = createChatSessionStore();
+			const model = testDisposables.add(createMockChatModel(LocalChatSessionUri.forSession('old-session')));
+			setSessionAge(model, 31 * msPerDay);
+
+			await store.storeSessions([model]);
+
+			const index = await store.getIndex();
+			assert.strictEqual(index['old-session'], undefined);
+			assert.strictEqual(await store.readSession('old-session'), undefined);
+		});
+
+		test('retentionDays 0 keeps sessions forever', async () => {
+			await configurationService.setUserConfiguration(ChatConfiguration.HistoryRetentionDays, 0);
+			const store = createChatSessionStore();
+			const model = testDisposables.add(createMockChatModel(LocalChatSessionUri.forSession('ancient-session')));
+			setSessionAge(model, 400 * msPerDay);
+
+			await store.storeSessions([model]);
+
+			const index = await store.getIndex();
+			assert.ok(index['ancient-session']);
+			assert.ok(await store.readSession('ancient-session'));
+		});
+
+		test('recovers index from disk when index is missing', async () => {
+			await configurationService.setUserConfiguration(ChatConfiguration.HistoryRetentionDays, 0);
+			await configurationService.setUserConfiguration('chat.useLogSessionStorage', false);
+
+			const fileService = instantiationService.get(IFileService) as ListingInMemoryTestFileService;
+			const store = createChatSessionStore();
+			const storageFolder = store.getChatStorageFolder();
+			const serializable = {
+				version: 3 as const,
+				sessionId: 'recover-session',
+				creationDate: Date.now(),
+				customTitle: 'Recover Me',
+				initialLocation: 'panel',
+				requests: [] as [],
+				responderUsername: '',
+			};
+			await fileService.writeFile(
+				joinPath(storageFolder, 'recover-session.json'),
+				VSBuffer.fromString(JSON.stringify(serializable)),
+			);
+
+			const listed = await fileService.resolve(storageFolder);
+			assert.ok((listed.children?.length ?? 0) > 0, `expected session files under ${storageFolder.toString()}`);
+
+			// Index is empty (never stored); files remain on disk
+			assert.strictEqual(store.hasSessions(), false);
+
+			await store.migrateDataIfNeeded(() => undefined);
+
+			const index = await store.getIndex();
+			assert.ok(index['recover-session'], `index keys: ${Object.keys(index).join(',')}`);
+			assert.strictEqual(index['recover-session'].title, 'Recover Me');
+			assert.ok(await store.readSession('recover-session'));
+		});
 	});
 
 	suite('transferred sessions', () => {

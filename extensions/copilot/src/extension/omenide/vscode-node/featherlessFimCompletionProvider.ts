@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { IBYOKStorageService } from '../../byok/vscode-node/byokStorageService';
-import { FeatherlessBYOKLMProvider } from '../../byok/vscode-node/featherlessProvider';
+import { FeatherlessBYOKLMProvider, getFeatherlessAuthService } from '../../byok/vscode-node/featherlessProvider';
 import { OmenIDEConfig, OmenIDEDefaults } from '../common/omenideConfig';
 
 export class FeatherlessFimCompletionProvider implements vscode.InlineCompletionItemProvider {
@@ -27,7 +27,8 @@ export class FeatherlessFimCompletionProvider implements vscode.InlineCompletion
 			return undefined;
 		}
 
-		const apiKey = await this._byokStorage.getAPIKey(FeatherlessBYOKLMProvider.providerName);
+		const apiKey = await getFeatherlessAuthService()?.getBearerToken()
+			?? await this._byokStorage.getAPIKey(FeatherlessBYOKLMProvider.providerName);
 		if (!apiKey) {
 			return undefined;
 		}

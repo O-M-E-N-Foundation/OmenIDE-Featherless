@@ -153,6 +153,8 @@ import { IPromptsService } from '../../../platform/promptFiles/common/promptsSer
 import { AutomaticInstructionsCollector, IAutomaticInstructionsCollector } from '../../../platform/promptFiles/node/automaticInstructionsCollector';
 import { BYOKStorageService, IBYOKStorageService } from '../../byok/vscode-node/byokStorageService';
 import { OmenIDEEmbeddingsComputer } from '../../omenide/node/omenideEmbeddingsComputer';
+import { FeatherlessImageAnalysisService } from '../../omenide/node/featherlessImageAnalysisService';
+import { IOmenImageAnalysisService } from '../../omenide/common/imageAnalysisService';
 
 // ###########################################################################################
 // ###                                                                                     ###
@@ -169,6 +171,7 @@ export function registerServices(builder: IInstantiationServiceBuilder, extensio
 
 	builder.define(IBYOKStorageService, new SyncDescriptor(BYOKStorageService));
 	builder.define(IEmbeddingsComputer, new SyncDescriptor(OmenIDEEmbeddingsComputer));
+	builder.define(IOmenImageAnalysisService, new SyncDescriptor(FeatherlessImageAnalysisService));
 
 	builder.define(IAutomodeService, new SyncDescriptor(AutomodeService));
 	builder.define(IConversationStore, new SyncDescriptor(ConversationStore));

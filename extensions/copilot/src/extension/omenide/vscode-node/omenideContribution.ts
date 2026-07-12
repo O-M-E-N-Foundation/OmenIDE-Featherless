@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  OmenIDE — registers the Featherless FIM inline completion provider.
+ *  OmenIDE — registers the Featherless FIM inline completion provider and image analysis command.
  *
  *  Note: this intentionally does NOT configure the NES/xtab inline-edits
  *  provider. Its `github.copilot.chat.advanced.inlineEdits.xtabProvider.*`
@@ -14,6 +14,7 @@ import { IInstantiationService } from '../../../util/vs/platform/instantiation/c
 import { IBYOKStorageService } from '../../byok/vscode-node/byokStorageService';
 import { FeatherlessBYOKLMProvider } from '../../byok/vscode-node/featherlessProvider';
 import { IExtensionContribution } from '../../common/contributions';
+import { IOmenImageAnalysisService } from '../common/imageAnalysisService';
 import { FeatherlessFimCompletionProvider } from './featherlessFimCompletionProvider';
 
 export class OmenIDEContribution extends Disposable implements IExtensionContribution {
@@ -22,8 +23,31 @@ export class OmenIDEContribution extends Disposable implements IExtensionContrib
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IBYOKStorageService private readonly _byokStorage: IBYOKStorageService,
+		@IOmenImageAnalysisService private readonly _imageAnalysis: IOmenImageAnalysisService,
 	) {
 		super();
+
+		this._register(vscode.commands.registerCommand('omenide.analyzeChatImage', async (args?: {
+			imageBase64?: string;
+			mimeType?: string;
+			userPrompt?: string;
+			imageLabel?: string;
+		}) => {
+			if (!args?.imageBase64) {
+				return undefined;
+			}
+			try {
+				const imageData = Buffer.from(args.imageBase64, 'base64');
+				return await this._imageAnalysis.analyzeImage({
+					imageData,
+					mimeType: args.mimeType,
+					userPrompt: args.userPrompt,
+					imageLabel: args.imageLabel,
+				});
+			} catch {
+				return undefined;
+			}
+		}));
 
 		void this._registerFimProvider(instantiationService);
 	}

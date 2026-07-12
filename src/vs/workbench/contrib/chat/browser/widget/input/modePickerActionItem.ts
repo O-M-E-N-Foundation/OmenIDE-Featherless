@@ -187,13 +187,16 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 		const getActionsForCustomAgentTarget = (currentTarget: Target): IActionWidgetDropdownAction[] => {
 			const modes = delegate.currentChatModes.get();
 			const currentMode = delegate.currentMode.get();
-			const filteredCustomModes = modes.custom.filter(mode => {
-				const target = mode.target.get();
-				if (target !== currentTarget && target !== Target.Undefined) {
-					return false;
-				}
-				return true;
-			});
+			const filteredCustomModes = excludeCustomModesCollidingWithBuiltins(
+				modes.custom.filter(mode => {
+					const target = mode.target.get();
+					if (target !== currentTarget && target !== Target.Undefined) {
+						return false;
+					}
+					return true;
+				}),
+				[ChatMode.Agent, ...modes.builtin],
+			);
 			const customModes = groupBy(
 				filteredCustomModes,
 				mode => isModeConsideredBuiltIn(mode, this._productService) ? 'builtin' : 'custom');
@@ -220,12 +223,15 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 				const otherBuiltinModes = modes.builtin.filter(mode => {
 					return mode.id !== ChatMode.Agent.id && shouldShowBuiltInMode(mode, assignments.get(), agentModeDisabledViaPolicy);
 				});
-				const filteredCustomModes = modes.custom.filter(mode => {
-					if (isModeConsideredBuiltIn(mode, this._productService)) {
-						return shouldShowBuiltInMode(mode, assignments.get(), agentModeDisabledViaPolicy);
-					}
-					return true;
-				});
+				const filteredCustomModes = excludeCustomModesCollidingWithBuiltins(
+					modes.custom.filter(mode => {
+						if (isModeConsideredBuiltIn(mode, this._productService)) {
+							return shouldShowBuiltInMode(mode, assignments.get(), agentModeDisabledViaPolicy);
+						}
+						return true;
+					}),
+					coalesce([agentMode, ...otherBuiltinModes]),
+				);
 				// Filter out 'implement' mode from the dropdown - it's available for handoffs but not user-selectable
 				const customModes = groupBy(
 					filteredCustomModes,
@@ -376,4 +382,22 @@ function shouldShowBuiltInMode(mode: IChatMode, assignments: { showOldAskMode: b
 	}
 
 	return true;
+}
+
+/**
+ * Drop custom/extension agents whose label or name collides with a builtin mode
+ * (e.g. Copilot's Plan agent vs core ChatMode.Plan), so the picker shows one entry.
+ */
+function excludeCustomModesCollidingWithBuiltins(customModes: readonly IChatMode[], builtinModes: readonly IChatMode[]): IChatMode[] {
+	const builtinKeys = new Set<string>();
+	for (const mode of builtinModes) {
+		builtinKeys.add(mode.label.get().toLowerCase());
+		builtinKeys.add(mode.name.get().toLowerCase());
+		builtinKeys.add(mode.id.toLowerCase());
+	}
+	return customModes.filter(mode => {
+		const label = mode.label.get().toLowerCase();
+		const name = mode.name.get().toLowerCase();
+		return !builtinKeys.has(label) && !builtinKeys.has(name);
+	});
 }

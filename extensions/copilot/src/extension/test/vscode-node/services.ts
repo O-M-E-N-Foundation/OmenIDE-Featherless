@@ -21,6 +21,8 @@ import { DiffServiceImpl } from '../../../platform/diff/node/diffServiceImpl';
 import { IEmbeddingsComputer } from '../../../platform/embeddings/common/embeddingsComputer';
 import { BYOKStorageService, IBYOKStorageService } from '../../byok/vscode-node/byokStorageService';
 import { OmenIDEEmbeddingsComputer } from '../../omenide/node/omenideEmbeddingsComputer';
+import { FeatherlessImageAnalysisService } from '../../omenide/node/featherlessImageAnalysisService';
+import { IOmenImageAnalysisService } from '../../omenide/common/imageAnalysisService';
 import { ICAPIClientService } from '../../../platform/endpoint/common/capiClient';
 import { IDomainService } from '../../../platform/endpoint/common/domainService';
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
@@ -165,6 +167,7 @@ export function createExtensionTestingServices(): TestingServiceCollection {
 	testingServiceCollection.define(ITabsAndEditorsService, new SyncDescriptor(TabsAndEditorsServiceImpl));
 	testingServiceCollection.define(IBYOKStorageService, new SyncDescriptor(BYOKStorageService));
 	testingServiceCollection.define(IEmbeddingsComputer, new SyncDescriptor(OmenIDEEmbeddingsComputer));
+	testingServiceCollection.define(IOmenImageAnalysisService, new SyncDescriptor(FeatherlessImageAnalysisService));
 	testingServiceCollection.define(ITelemetryService, new SyncDescriptor(NullTelemetryService));
 	testingServiceCollection.define(ILanguageDiagnosticsService, new SyncDescriptor(LanguageDiagnosticsServiceImpl));
 	testingServiceCollection.define(ITokenizerProvider, new SyncDescriptor(TokenizerProvider, [true]));

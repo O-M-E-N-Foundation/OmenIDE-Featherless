@@ -7,20 +7,24 @@ import { Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IProductService } from '../../../../platform/product/common/productService.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { ChatEntitlementContextKeys } from '../../../services/chat/common/chatEntitlementService.js';
+import { usesFeatherlessOnlyProvider } from '../../../services/chat/common/featherless.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
 import { ChatConfiguration } from '../common/constants.js';
-import { COPILOT_VENDOR_ID } from '../common/languageModels.js';
+import { COPILOT_VENDOR_ID, ILanguageModelsService } from '../common/languageModels.js';
 import { ILanguageModelsConfigurationService } from '../common/languageModelsConfiguration.js';
 
 /**
  * Owns the `omenide.hasByokModels` context key. The key is true iff:
  *  - `omenide.clientByokEnabled` is true (set by `ChatEntitlementService` + Omen IDE extension),
  *  - `chat.aiDisabled` is off, and
- *  - the language-models configuration has at least one non-Copilot vendor group (at any time),
+ *  - For Omen IDE (Featherless-only): `omenide.hasFeatherlessCredentials` is true AND at least
+ *    one Featherless model is registered in the language-model cache.
+ *  - Otherwise: the language-models configuration has at least one non-Copilot vendor group (at any time),
  *    or — pre extension scan — the `chatNonCopilotModelsAreUserSelectable` signal is on.
  *
  * Strategy (avoids activating BYOK extensions just to gate UI):
@@ -41,22 +45,27 @@ export class HasByokModelsContribution extends Disposable implements IWorkbenchC
 
 	private static readonly TRACKED_KEYS = new Set([
 		ChatEntitlementContextKeys.clientByokEnabled.key,
+		ChatEntitlementContextKeys.hasFeatherlessCredentials.key,
 		ChatContextKeys.nonCopilotLanguageModelsAreUserSelectable.key,
 	]);
 
 	private readonly _hasByokModels: IContextKey<boolean>;
+	private readonly _featherlessOnly: boolean;
 	private _extensionsRegistered = false;
 	private _configurationLoaded = false;
 
 	constructor(
 		@ILanguageModelsConfigurationService private readonly _languageModelsConfigurationService: ILanguageModelsConfigurationService,
+		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@IStorageService private readonly _storageService: IStorageService,
+		@IProductService productService: IProductService,
 		@IExtensionService extensionService: IExtensionService,
 	) {
 		super();
 
+		this._featherlessOnly = usesFeatherlessOnlyProvider(productService);
 		this._hasByokModels = ChatEntitlementContextKeys.hasByokModels.bindTo(this._contextKeyService);
 
 		this._restore();
@@ -80,6 +89,7 @@ export class HasByokModelsContribution extends Disposable implements IWorkbenchC
 			Event.filter(this._configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(ChatConfiguration.AIDisabled)),
 			Event.filter(this._contextKeyService.onDidChangeContext, e => e.affectsSome(HasByokModelsContribution.TRACKED_KEYS)),
 			this._languageModelsConfigurationService.onDidChangeLanguageModelGroups,
+			this._languageModelsService.onDidChangeLanguageModels,
 		)(() => this._update()));
 	}
 
@@ -101,9 +111,38 @@ export class HasByokModelsContribution extends Disposable implements IWorkbenchC
 		this._storageService.store(HasByokModelsContribution.STORAGE_KEY_LAST_KNOWN, value, StorageScope.APPLICATION, StorageTarget.MACHINE);
 	}
 
+	private _hasFeatherlessModelsInCache(): boolean {
+		return this._languageModelsService.getLanguageModelIds().some(id => id.startsWith('featherless/'));
+	}
+
+	private _updateFeatherlessOnly(): void {
+		const hasCredentials = !!this._contextKeyService.getContextKeyValue<boolean>(ChatEntitlementContextKeys.hasFeatherlessCredentials.key);
+		if (!hasCredentials) {
+			if (this._extensionsRegistered && this._configurationLoaded) {
+				this._setResult(false);
+			}
+			return;
+		}
+
+		if (this._hasFeatherlessModelsInCache()) {
+			this._setResult(true);
+			return;
+		}
+
+		// Credentials exist but models are still loading — keep optimistic restore until settled.
+		if (this._extensionsRegistered && this._configurationLoaded) {
+			this._setResult(false);
+		}
+	}
+
 	private _update(): void {
 		if (!this._isFeatureEnabled()) {
 			this._setResult(false);
+			return;
+		}
+
+		if (this._featherlessOnly) {
+			this._updateFeatherlessOnly();
 			return;
 		}
 

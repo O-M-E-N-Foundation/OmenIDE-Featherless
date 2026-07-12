@@ -26,6 +26,7 @@ import { DialogServiceImpl } from '../../../platform/dialog/vscode/dialogService
 import { EditSurvivalTrackerService, IEditSurvivalTrackerService } from '../../../platform/editSurvivalTracking/common/editSurvivalTrackerService';
 import { IEmbeddingsComputer } from '../../../platform/embeddings/common/embeddingsComputer';
 import { RemoteEmbeddingsComputer } from '../../../platform/embeddings/common/remoteEmbeddingsComputer';
+import { IOmenImageAnalysisService, NullOmenImageAnalysisService } from '../../omenide/common/imageAnalysisService';
 import { ICombinedEmbeddingIndex, VSCodeCombinedIndexImpl } from '../../../platform/embeddings/common/vscodeIndex';
 import { IEnvService, isScenarioAutomation } from '../../../platform/env/common/envService';
 import { EnvServiceImpl } from '../../../platform/env/vscode/envServiceImpl';
@@ -165,6 +166,7 @@ export function registerServices(builder: IInstantiationServiceBuilder, extensio
 	builder.define(IInteractiveSessionService, new InteractiveSessionServiceImpl());
 	builder.define(IAuthenticationChatUpgradeService, new SyncDescriptor(AuthenticationChatUpgradeService));
 	builder.define(IEmbeddingsComputer, new SyncDescriptor(RemoteEmbeddingsComputer));
+	builder.define(IOmenImageAnalysisService, new SyncDescriptor(NullOmenImageAnalysisService));
 	builder.define(IToolGroupingService, new SyncDescriptor(ToolGroupingService));
 	builder.define(IToolEmbeddingsComputer, new SyncDescriptor(ToolEmbeddingsComputer));
 	builder.define(IToolGroupingCache, new SyncDescriptor(ToolGroupingCache));

@@ -7,7 +7,7 @@
 import './disableProcessReport';
 
 import { ExtensionContext } from 'vscode';
-import { dirname, join } from '../../../util/vs/base/common/path';
+import { join } from '../../../util/vs/base/common/path';
 import { baseActivate } from '../vscode/extension';
 import { vscodeNodeContributions } from './contributions';
 import { registerServices } from './services';
@@ -28,14 +28,14 @@ function configureDevPackages() {
 		const sourceMapSupport = require('source-map-support');
 		sourceMapSupport.install();
 		const dotenv = require('dotenv');
-		// Optional dev-only convenience: load a `.env` from the fork's repo root
-		// (the directory containing product.json). The root is discovered by
-		// walking up from this bundle's location, so there are no hardcoded paths
-		// to sibling folders. If no `.env` exists, dotenv is a no-op and the
-		// Featherless API key is entered through the UI instead.
+		const fs = require('fs');
+		// Optional dev-only convenience: load `.env` from the vscode repo root only.
 		const repoRoot = findRepoRoot(__dirname);
 		if (repoRoot) {
-			dotenv.config({ path: join(repoRoot, '.env') });
+			const repoEnv = join(repoRoot, '.env');
+			if (fs.existsSync(repoEnv)) {
+				dotenv.config({ path: repoEnv });
+			}
 		}
 	} catch (err) {
 		console.error(err);

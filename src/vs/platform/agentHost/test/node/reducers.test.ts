@@ -224,6 +224,31 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 			{ status: ToolCallStatus.Running, meta: { autoApproveBySetting: true } },
 		]);
 	});
+
+	test('ChatToolCallReady falls back to streamed partialInput when toolInput is shorter', () => {
+		let state = withActiveTurnAndToolCall(makeChat());
+		state = chatReducer(state, {
+			type: ActionType.ChatToolCallDelta,
+			turnId: 'turn-1',
+			toolCallId: 'tc-1',
+			content: '{"title":"Plan","overview":"TLDR","content":"## Full plan\\n\\nStep 1\\nStep 2\\nStep 3"}',
+		});
+		state = chatReducer(state, {
+			type: ActionType.ChatToolCallReady,
+			turnId: 'turn-1',
+			toolCallId: 'tc-1',
+			invocationMessage: 'Save plan',
+			toolInput: '{"title":"Plan","overview":"TLDR","content":"## Full plan\\n\\nStep 1"}',
+			confirmed: ToolCallConfirmationReason.NotNeeded,
+		});
+
+		const part = state.activeTurn?.responseParts.find(part => part.kind === ResponsePartKind.ToolCall && part.toolCall.toolCallId === 'tc-1');
+		assert.ok(part?.kind === ResponsePartKind.ToolCall);
+		assert.strictEqual(part.toolCall.status, ToolCallStatus.Running);
+		if (part.toolCall.status === ToolCallStatus.Running) {
+			assert.ok(part.toolCall.toolInput?.includes('Step 3'));
+		}
+	});
 });
 
 suite('changesetReducer', () => {

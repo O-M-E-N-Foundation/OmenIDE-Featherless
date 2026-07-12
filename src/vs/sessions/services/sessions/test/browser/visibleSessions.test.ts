@@ -85,7 +85,7 @@ suite('VisibleSessions', () => {
 
 	suite('setActive', () => {
 
-		test('opening B after non-sticky A replaces A in place', () => {
+		test('opening B after non-sticky A appends B as a new tab', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -94,13 +94,13 @@ suite('VisibleSessions', () => {
 			model.setActive(B);
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['B'],
+				visible: ['A', 'B'],
 				active: 'B',
 				sticky: [],
 			});
 		});
 
-		test('opening B when active A is sticky appends B (no other non-sticky)', () => {
+		test('opening B when active A is sticky appends B', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -116,7 +116,7 @@ suite('VisibleSessions', () => {
 			});
 		});
 
-		test('opening C when active is sticky and a non-sticky exists replaces the non-sticky', () => {
+		test('opening C while A is sticky and B is open appends C (tabs accumulate)', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -125,11 +125,11 @@ suite('VisibleSessions', () => {
 			model.setActive(A);
 			model.toggleStickiness(A);
 			model.setActive(B);            // visible: [A, B], active: B (non-sticky)
-			model.setActive(A);            // active flips to A (sticky); B remains non-sticky
-			model.setActive(C);            // active A is sticky → replace most-recent non-sticky B
+			model.setActive(A);            // active flips to A (sticky); B remains
+			model.setActive(C);            // append C as a new tab
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', 'C'],
+				visible: ['A', 'B', 'C'],
 				active: 'C',
 				sticky: ['A'],
 			});
@@ -157,7 +157,7 @@ suite('VisibleSessions', () => {
 			});
 		});
 
-		test('opens with multiple non-sticky sessions side by side', () => {
+		test('opens with multiple non-sticky sessions as tabs', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -167,10 +167,10 @@ suite('VisibleSessions', () => {
 			model.toggleStickiness(A);     // [A] sticky:[A]
 			model.setActive(B);            // [A, B] active:B
 			model.setActive(A);            // [A, B] active:A (sticky)
-			model.setActive(C);            // active sticky → replace non-sticky B → [A, C]
+			model.setActive(C);            // [A, B, C] active:C
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', 'C'],
+				visible: ['A', 'B', 'C'],
 				active: 'C',
 				sticky: ['A'],
 			});
@@ -193,7 +193,7 @@ suite('VisibleSessions', () => {
 			});
 		});
 
-		test('setActive(undefined) replaces the active non-sticky slot with the empty slot', () => {
+		test('setActive(undefined) appends a New Session tab without closing others', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -201,10 +201,10 @@ suite('VisibleSessions', () => {
 			model.setActive(A);
 			model.toggleStickiness(A);
 			model.setActive(B);            // [A, B] active:B, sticky:[A]
-			model.setActive(undefined);    // active B is non-sticky → replaced by empty slot
+			model.setActive(undefined);    // append empty tab
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', undefined],
+				visible: ['A', 'B', undefined],
 				active: undefined,
 				sticky: ['A'],
 			});
@@ -234,17 +234,17 @@ suite('VisibleSessions', () => {
 			model.setActive(A);
 			model.toggleStickiness(A);     // [A] sticky:[A]
 			model.setActive(undefined);    // [A, undefined] active:undefined (empty slot)
-			model.setActive(B);            // active empty slot is non-sticky → replaced by B
-			model.setActive(undefined);    // active B is non-sticky → replaced by empty slot
+			model.setActive(B);            // active empty slot is filled by B
+			model.setActive(undefined);    // append a new empty tab
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', undefined],
+				visible: ['A', 'B', undefined],
 				active: undefined,
 				sticky: ['A'],
 			});
 		});
 
-		test('opening a real session while the empty slot is the only most-recent non-sticky replaces it', () => {
+		test('opening a real session while the empty slot is active fills it', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -252,11 +252,28 @@ suite('VisibleSessions', () => {
 			model.setActive(A);
 			model.toggleStickiness(A);     // [A] sticky:[A]
 			model.setActive(undefined);    // [A, undefined] active:undefined
-			model.setActive(A);            // active flips to A (sticky); empty slot remains
-			model.setActive(B);            // active A is sticky → replace most-recent non-sticky (empty)
+			model.setActive(B);            // fill empty with B
 
 			assert.deepStrictEqual(snapshot(model), {
 				visible: ['A', 'B'],
+				active: 'B',
+				sticky: ['A'],
+			});
+		});
+
+		test('opening a real session while empty exists but is not active appends a tab', () => {
+			const model = createModel();
+			const A = stubSession('A');
+			const B = stubSession('B');
+
+			model.setActive(A);
+			model.toggleStickiness(A);     // [A] sticky:[A]
+			model.setActive(undefined);    // [A, undefined] active:undefined
+			model.setActive(A);            // active flips to A; empty slot remains
+			model.setActive(B);            // empty is not active → append B
+
+			assert.deepStrictEqual(snapshot(model), {
+				visible: ['A', undefined, 'B'],
 				active: 'B',
 				sticky: ['A'],
 			});
@@ -314,7 +331,7 @@ suite('VisibleSessions', () => {
 			});
 		});
 
-		test('after toggling a sticky session non-sticky, opening a new session replaces that newly-non-sticky', () => {
+		test('after toggling a sticky session non-sticky, opening a new session appends a tab', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -325,19 +342,18 @@ suite('VisibleSessions', () => {
 			model.toggleStickiness(A);
 			model.setActive(B);
 			model.toggleStickiness(B);     // [A, B] sticky:[A, B] active:B
-			model.toggleStickiness(B);     // B becomes the (only) non-sticky → most-recent
-			model.setActive(C);            // active B is non-sticky → replaces B in place
+			model.toggleStickiness(B);     // B becomes non-sticky
+			model.setActive(C);            // append C
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', 'C'],
+				visible: ['A', 'B', 'C'],
 				active: 'C',
 				sticky: ['A'],
 			});
 
-			// Open D while active C is non-sticky → replaces C
 			model.setActive(D);
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', 'D'],
+				visible: ['A', 'B', 'C', 'D'],
 				active: 'D',
 				sticky: ['A'],
 			});
@@ -496,7 +512,7 @@ suite('VisibleSessions', () => {
 			});
 		});
 
-		test('inserting a new session makes it the most-recent non-sticky for subsequent setActive', () => {
+		test('inserting a new session then opening another appends rather than replacing', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -509,10 +525,10 @@ suite('VisibleSessions', () => {
 			model.toggleStickiness(B);     // [A, B] sticky:[A, B]
 			model.insertAt(C, 'A', 'right'); // [A, C, B] non-sticky:[C]
 			model.setActive(A);            // active sticky → no grid change
-			model.setActive(D);            // active sticky → replace most-recent non-sticky C
+			model.setActive(D);            // append D as a new tab
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', 'D', 'B'],
+				visible: ['A', 'C', 'B', 'D'],
 				active: 'D',
 				sticky: ['A', 'B'],
 			});
@@ -711,7 +727,7 @@ suite('VisibleSessions', () => {
 			});
 		});
 
-		test('preserves most-recent-non-sticky tracking so subsequent setActive replaces the updated slot', () => {
+		test('preserves most-recent-non-sticky tracking while tabs accumulate on setActive', () => {
 			const model = createModel();
 			const A = stubSession('A');
 			const B = stubSession('B');
@@ -723,10 +739,10 @@ suite('VisibleSessions', () => {
 			model.setActive(B);            // [A, B] sticky:[A] active:B (non-sticky, most-recent)
 			model.setActive(A);            // active flips to A (sticky); B remains most-recent non-sticky
 			model.updateSession(B, Bnew);  // [A, Bnew] sticky:[A]
-			model.setActive(C);            // active A sticky → replace most-recent non-sticky Bnew
+			model.setActive(C);            // append C as a new tab
 
 			assert.deepStrictEqual(snapshot(model), {
-				visible: ['A', 'C'],
+				visible: ['A', 'Bnew', 'C'],
 				active: 'C',
 				sticky: ['A'],
 			});

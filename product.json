@@ -237,7 +237,8 @@
 		"OmenIDE.omenide-chat"
 	],
 	"configurationDefaults": {
-		"workbench.colorTheme": "Omen Dark"
+		"workbench.colorTheme": "Omen Dark",
+		"chat.restoreLastPanelSession": true
 	},
 	"sessionsWindowAllowedExtensions": [],
 	"voiceWsUrl": "wss://falcon-caas.mai.microsoft.com/voice-code/api/v1/realtime/voice"

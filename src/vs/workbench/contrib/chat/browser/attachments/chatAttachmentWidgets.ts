@@ -39,6 +39,7 @@ import { getFlatContextMenuActions } from '../../../../../platform/actions/brows
 import { IMenuService, MenuId } from '../../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { isOmenImageSidecarConfigured, OmenIDEConfiguration } from '../omenSettings/omenSettings.js';
 import { IContextKey, IContextKeyService, IScopedContextKeyService, RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
@@ -143,7 +144,8 @@ abstract class AbstractChatAttachmentWidget extends Disposable {
 	}
 
 	protected modelSupportsVision() {
-		return modelSupportsVision(this.currentLanguageModel);
+		const sidecarEnabled = isOmenImageSidecarConfigured(this.configurationService.getValue<string>(OmenIDEConfiguration.visionModel));
+		return modelSupportsVision(this.currentLanguageModel, sidecarEnabled);
 	}
 
 	private _hasClearButton = false;
@@ -228,8 +230,8 @@ abstract class AbstractChatAttachmentWidget extends Disposable {
 	}
 }
 
-function modelSupportsVision(currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined) {
-	return isAutoLanguageModel(currentLanguageModel) || (currentLanguageModel?.metadata.capabilities?.vision ?? false);
+function modelSupportsVision(currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined, imageSidecarEnabled = false) {
+	return imageSidecarEnabled || isAutoLanguageModel(currentLanguageModel) || (currentLanguageModel?.metadata.capabilities?.vision ?? false);
 }
 
 export function getEffectiveImageOmittedState(omittedState: OmittedState | undefined, currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined, isCurrentInput: boolean | undefined): OmittedState | undefined {
@@ -506,10 +508,11 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 
 		const isAutoModel = isAutoLanguageModel(currentLanguageModel);
 		const modelName = currentLanguageModel?.metadata.name;
+		const sidecarEnabled = isOmenImageSidecarConfigured(configurationService.getValue<string>(OmenIDEConfiguration.visionModel));
 		const omittedState = getEffectiveImageOmittedState(attachment.omittedState, currentLanguageModel, options.isCurrentInput);
 		this.element.classList.toggle('auto-image-warning', isAutoModel);
 		let ariaLabel: string;
-		if (omittedState === OmittedState.Full && modelName && !modelSupportsVision(currentLanguageModel)) {
+		if (omittedState === OmittedState.Full && modelName && !modelSupportsVision(currentLanguageModel, sidecarEnabled)) {
 			ariaLabel = localize('chat.unsupportedImageAttachment', "Image not sent because {0} does not support images: {1}", modelName, attachment.name);
 		} else if (omittedState === OmittedState.Full) {
 			ariaLabel = localize('chat.omittedImageAttachment', "Omitted this image: {0}", attachment.name);
@@ -519,6 +522,8 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 			ariaLabel = localize('chat.imageLimitExceededAttachment', "Image not sent due to limit: {0}", attachment.name);
 		} else if (isAutoModel) {
 			ariaLabel = localize('chat.autoImageAttachment', "Attached image, {0}. Image support depends on the model selected by Auto.", attachment.name);
+		} else if (!modelSupportsVision(currentLanguageModel) && sidecarEnabled) {
+			ariaLabel = localize('chat.sidecarImageAttachment', "Attached image, {0}. Will be described for {1}.", attachment.name, modelName ?? 'the selected model');
 		} else {
 			ariaLabel = localize('chat.imageAttachment', "Attached image, {0}", attachment.name);
 		}
@@ -537,7 +542,7 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 		const currentLanguageModelName = this.currentLanguageModel ? this.languageModelsService.lookupLanguageModel(this.currentLanguageModel.identifier)?.name ?? this.currentLanguageModel.identifier : 'Current model';
 
 		const fullName = resource ? this.labelService.getUriLabel(resource) : (attachment.fullName || attachment.name);
-		this._register(createImageElements(resource, attachment.name, fullName, this.element, imageData ?? (attachment.value as Uint8Array), attachment.id, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, omittedState));
+		this._register(createImageElements(resource, attachment.name, fullName, this.element, imageData ?? (attachment.value as Uint8Array), attachment.id, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, omittedState, sidecarEnabled));
 		this.attachSaveButton(resource, imageData, attachment.name, options.supportsDeletion);
 		this.element.ariaLabel = this.appendDeletionHint(ariaLabel);
 
@@ -614,7 +619,8 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 	currentLanguageModelName: string | undefined,
 	clickHandler: () => void,
 	currentLanguageModel?: ILanguageModelChatMetadataAndIdentifier,
-	omittedState?: OmittedState): IDisposable {
+	omittedState?: OmittedState,
+	imageSidecarEnabled = false): IDisposable {
 
 	const disposable = new DisposableStore();
 	if (omittedState === OmittedState.Partial) {
@@ -627,7 +633,8 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 	if (resource) {
 		element.style.cursor = 'pointer';
 	}
-	const supportsVision = modelSupportsVision(currentLanguageModel);
+	const supportsVision = modelSupportsVision(currentLanguageModel, imageSidecarEnabled);
+	const nativeVision = modelSupportsVision(currentLanguageModel, false);
 	const pillIcon = dom.$('div.chat-attached-context-pill', {}, dom.$(supportsVision ? 'span.codicon.codicon-file-media' : 'span.codicon.codicon-warning'));
 	const textLabel = dom.$('span.chat-attached-context-custom-text', {}, name);
 	element.appendChild(pillIcon);
@@ -672,6 +679,8 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 
 		if (isAutoLanguageModel(currentLanguageModel)) {
 			hoverElement.appendChild(dom.$('div', undefined, localize('chat.autoImageAttachmentHover', "Image support depends on the model selected by Auto.")));
+		} else if (!nativeVision && imageSidecarEnabled) {
+			hoverElement.appendChild(dom.$('div', undefined, localize('chat.sidecarImageAttachmentHover', "Image will be described for {0}.", currentLanguageModelName ?? 'this model')));
 		}
 
 		if (resource) {

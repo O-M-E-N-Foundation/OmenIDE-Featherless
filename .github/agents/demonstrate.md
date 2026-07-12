@@ -1,6 +1,7 @@
 ---
 name: Demonstrate
 description: Agent for demonstrating VS Code features
+user-invocable: false
 target: github-copilot
 tools:
 - "view"

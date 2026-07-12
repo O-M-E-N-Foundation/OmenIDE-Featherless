@@ -79,6 +79,15 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onCommand:omenide.signInFeatherless",
+    "onCommand:omenide.configureFeatherlessApiKey",
+    "onCommand:omenide.hasFeatherlessApiKey",
+    "onCommand:omenide.setFeatherlessApiKey",
+    "onCommand:omenide.bootstrapFeatherlessModels",
+    "onCommand:omenide.getFeatherlessAccountSummary",
+    "onCommand:omenide.signOutFeatherless",
+    "onCommand:omenide.listFeatherlessModels",
+    "onLanguageModelChatProvider:featherless",
     "onLanguageModelChat:copilot",
     "onUri",
     "onFileSystem:ccreq",
@@ -2442,7 +2451,12 @@
     "commands": [
       {
         "command": "omenide.configureFeatherlessApiKey",
-        "title": "Configure Featherless API Key",
+        "title": "Connect Featherless",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.signInFeatherless",
+        "title": "Sign in to Featherless",
         "category": "Omen IDE"
       },
       {
@@ -2457,7 +2471,27 @@
       },
       {
         "command": "omenide.resetFeatherlessApiKey",
-        "title": "Clear Featherless API Key",
+        "title": "Clear Featherless Credentials",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.bootstrapFeatherlessModels",
+        "title": "Refresh Featherless Models",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.getFeatherlessAccountSummary",
+        "title": "Get Featherless Account Summary",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.signOutFeatherless",
+        "title": "Sign out of Featherless",
+        "category": "Omen IDE"
+      },
+      {
+        "command": "omenide.listFeatherlessModels",
+        "title": "List Featherless Models",
         "category": "Omen IDE"
       },
       {
@@ -3278,6 +3312,11 @@
             "default": "Etherll/Qwen2.5-CodeFIM-1.5B-v2",
             "description": "Featherless FIM model for Tab autocomplete."
           },
+          "omenide.featherless.visionModel": {
+            "type": "string",
+            "default": "Qwen/Qwen3.6-27B",
+            "description": "Featherless vision model used to describe pasted/attached images when the selected chat model does not support images (e.g. GLM-5.2)."
+          },
           "omenide.featherless.autocomplete.enabled": {
             "type": "boolean",
             "default": true,
@@ -3294,6 +3333,22 @@
             "default": 12,
             "minimum": 1,
             "description": "How many times to retry Featherless requests when the provider reports a concurrency limit."
+          },
+          "omenide.featherless.enabledModels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "Featherless chat model ids enabled in the model picker. Empty means all models available on your plan are enabled (unless disabledModels is set)."
+          },
+          "omenide.featherless.disabledModels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "Featherless chat model ids hidden from the model picker. Used when browsing the full catalog; ignored when enabledModels is a non-empty allowlist."
           }
         }
       },

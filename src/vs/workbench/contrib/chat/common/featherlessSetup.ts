@@ -13,8 +13,10 @@ import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { EnablementState } from '../../../services/extensionManagement/common/extensionManagement.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
-import { usesFeatherlessOnlyProvider } from '../../../services/chat/common/featherless.js';
+import { FEATHERLESS_EXTENSION_BOOTSTRAP_COMMAND, FEATHERLESS_EXTENSION_HAS_KEY_COMMAND, usesFeatherlessOnlyProvider } from '../../../services/chat/common/featherless.js';
 import { IExtensionsWorkbenchService } from '../../extensions/common/extensions.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { ILanguageModelsService } from './languageModels.js';
 
 /**
  * Ensures the in-tree Omen IDE chat extension (`OmenIDE.omenide-chat`, built from
@@ -29,6 +31,8 @@ export async function ensureFeatherlessChatExtensionReady(
 	chatEntitlementService: IChatEntitlementService,
 	productService: IProductService,
 	logService: ILogService,
+	commandService?: ICommandService,
+	languageModelsService?: ILanguageModelsService,
 ): Promise<void> {
 	const chatExtensionId = productService.defaultChatAgent?.chatExtensionId;
 	if (!chatExtensionId) {
@@ -107,6 +111,31 @@ export async function ensureFeatherlessChatExtensionReady(
 		}), 8000);
 	} finally {
 		store.dispose();
+	}
+
+	if (usesFeatherlessOnlyProvider(productService) && commandService) {
+		try {
+			const hasCredentials = await commandService.executeCommand<boolean>(FEATHERLESS_EXTENSION_HAS_KEY_COMMAND);
+			if (hasCredentials) {
+				await commandService.executeCommand(FEATHERLESS_EXTENSION_BOOTSTRAP_COMMAND);
+				if (languageModelsService) {
+					await raceTimeout(new Promise<void>(resolve => {
+						if (languageModelsService.getLanguageModelIds().some(id => id.startsWith('featherless/'))) {
+							resolve();
+							return;
+						}
+						const listener = languageModelsService.onDidChangeLanguageModels(() => {
+							if (languageModelsService.getLanguageModelIds().some(id => id.startsWith('featherless/'))) {
+								listener.dispose();
+								resolve();
+							}
+						});
+					}), 10000);
+				}
+			}
+		} catch (err) {
+			logService.warn(`[featherless setup] bootstrap deferred: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 }
 

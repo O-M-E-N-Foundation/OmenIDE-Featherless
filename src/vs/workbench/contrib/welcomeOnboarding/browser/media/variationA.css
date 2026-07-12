@@ -26,6 +26,14 @@
 	opacity: 1;
 }
 
+/* While Featherless OAuth uses the integrated browser, get the overlay out of the way
+ * so the browser is full-window and the editor tab close button is usable. */
+.onboarding-a-overlay.oauth-browser-active {
+	opacity: 0;
+	pointer-events: none;
+	visibility: hidden;
+}
+
 .onboarding-a-overlay.exiting {
 	opacity: 0;
 	transition: opacity 0.2s ease-out;
@@ -288,10 +296,10 @@
 	border: none;
 	background: transparent;
 	box-shadow: none;
-	background-image: url('../../../../browser/media/code-icon.svg');
+	background-image: url('./omen-app-icon.png');
 	background-repeat: no-repeat;
 	background-position: center center;
-	background-size: 148px;
+	background-size: contain;
 }
 
 .onboarding-a-signin-content {
@@ -326,7 +334,6 @@
 	font-size: 14px;
 	line-height: 1.45;
 	color: var(--vscode-descriptionForeground);
-	white-space: nowrap;
 }
 
 .onboarding-a-signin-actions {
@@ -336,6 +343,42 @@
 	margin-top: 4px;
 	flex-wrap: nowrap;
 	min-width: 0;
+}
+
+/* Featherless connect: stack OAuth, divider, and API key vertically */
+.onboarding-a-featherless-auth-stack {
+	flex-direction: column;
+	align-items: stretch;
+	flex-wrap: wrap;
+	gap: 12px;
+	width: 100%;
+}
+
+.onboarding-a-featherless-auth-stack .onboarding-a-signin-btn {
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.onboarding-a-featherless-auth-stack .onboarding-a-signin-ghe-input {
+	flex: 1 1 auto;
+	width: auto;
+	max-width: none;
+	margin-top: 0;
+	min-width: 0;
+}
+
+.onboarding-a-featherless-key-row {
+	display: flex;
+	align-items: stretch;
+	gap: 8px;
+	width: 100%;
+}
+
+.onboarding-a-featherless-key-row .onboarding-a-featherless-submit {
+	flex: 0 0 auto;
+	align-self: stretch;
+	white-space: nowrap;
+	padding: 0 16px;
 }
 
 .onboarding-a-signin-footer {
@@ -512,6 +555,30 @@
 	background-size: contain;
 	align-items: center;
 	justify-content: center;
+}
+
+.onboarding-a-signin-btn.primary .onboarding-a-signin-btn-label {
+	color: var(--vscode-button-foreground);
+}
+
+.onboarding-a-signin-or-divider {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	margin: 0;
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	text-transform: lowercase;
+	user-select: none;
+}
+
+.onboarding-a-signin-or-divider::before,
+.onboarding-a-signin-or-divider::after {
+	content: '';
+	flex: 1;
+	height: 1px;
+	background: var(--vscode-widget-border, rgba(255, 255, 255, 0.12));
 }
 
 .onboarding-a-provider-mark.github {

@@ -242,7 +242,7 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
 				{
 					id: 'omenideFeatherlessKey',
 					title: localize('gettingStarted.omenide.featherless.title', "Connect Featherless.ai"),
-					description: localize('gettingStarted.omenide.featherless.description', "Omen IDE runs entirely on Featherless.ai — no GitHub or Copilot account required. Paste your API key to turn on chat, Tab autocomplete, and codebase search.\n{0}\n{1}", Button(localize('omenide.enterKey', "Enter API Key"), `command:${FEATHERLESS_CONFIGURE_API_KEY_COMMAND}`), Button(localize('omenide.getKey', "Get a Featherless Key"), 'https://featherless.ai/account/api-keys')),
+					description: localize('gettingStarted.omenide.featherless.description', "Omen IDE runs entirely on Featherless.ai — no GitHub or Copilot account required. Sign in with OAuth or paste an API key to turn on chat, Tab autocomplete, and codebase search.\n{0}\n{1}", Button(localize('omenide.connectFeatherless', "Connect Featherless"), `command:${FEATHERLESS_CONFIGURE_API_KEY_COMMAND}`), Button(localize('omenide.getKey', "Get a Featherless Key"), 'https://featherless.ai/account/api-keys')),
 					completionEvents: [`onCommand:${FEATHERLESS_CONFIGURE_API_KEY_COMMAND}`],
 					media: { type: 'svg', altText: 'Connect your Featherless.ai API key', path: 'ai-powered-suggestions.svg' },
 				},

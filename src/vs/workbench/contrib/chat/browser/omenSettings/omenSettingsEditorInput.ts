@@ -22,7 +22,7 @@ export class OmenSettingsEditorInput extends EditorInput {
 	private static _instance: OmenSettingsEditorInput | undefined;
 
 	static getOrCreate(): OmenSettingsEditorInput {
-		if (!OmenSettingsEditorInput._instance) {
+		if (!OmenSettingsEditorInput._instance || OmenSettingsEditorInput._instance.isDisposed()) {
 			OmenSettingsEditorInput._instance = new OmenSettingsEditorInput();
 		}
 		return OmenSettingsEditorInput._instance;
@@ -56,5 +56,12 @@ export class OmenSettingsEditorInput extends EditorInput {
 
 	override async resolve(): Promise<null> {
 		return null;
+	}
+
+	override dispose(): void {
+		if (OmenSettingsEditorInput._instance === this) {
+			OmenSettingsEditorInput._instance = undefined;
+		}
+		super.dispose();
 	}
 }

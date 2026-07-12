@@ -40,6 +40,10 @@ export const Menus = {
 	SessionConversations: new MenuId('SessionsSessionConversations'),
 	SessionChatTab: new MenuId('SessionsSessionChatTab'),
 	SessionChatTabBar: new MenuId('SessionsSessionChatTabBar'),
+	/** Per-session tab in the Agents Window session tab strip (Cursor-style). */
+	SessionTab: new MenuId('SessionsSessionTab'),
+	/** Trailing actions on the Agents Window session tab strip (e.g. New Session). */
+	SessionTabBar: new MenuId('SessionsSessionTabBar'),
 	SessionHeaderMeta: new MenuId('SessionsSessionHeaderMeta'),
 	SessionHeaderContext: MenuId.SessionHeaderContext,
 } as const;

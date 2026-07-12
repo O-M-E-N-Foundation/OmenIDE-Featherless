@@ -5,21 +5,26 @@
 
 import { RequestType } from '@vscode/copilot-api';
 import * as l10n from '@vscode/l10n';
-import { Image as BaseImage, BasePromptElementProps, ChatResponseReferencePartStatusKind, PromptElement, PromptReference, PromptSizing, UserMessage } from '@vscode/prompt-tsx';
+import { Image as BaseImage, BasePromptElementProps, ChatResponseReferencePartStatusKind, PromptElement, PromptReference, PromptSizing, TextChunk, UserMessage } from '@vscode/prompt-tsx';
 import { IAuthenticationService } from '../../../../platform/authentication/common/authentication';
 import { ConfigKey, IConfigurationService } from '../../../../platform/configuration/common/configurationService';
 import { modelCanUseImageURL } from '../../../../platform/endpoint/common/chatModelCapabilities';
 import { IImageService } from '../../../../platform/image/common/imageService';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { getMimeType } from '../../../../util/common/imageUtils';
+import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import { Uri } from '../../../../vscodeTypes';
+import { IOmenImageAnalysisService } from '../../../omenide/common/imageAnalysisService';
 import { IPromptEndpoint } from '../base/promptRenderer';
+import { Tag } from '../base/tag';
 
 export interface ImageProps extends BasePromptElementProps {
 	variableName: string;
 	variableValue: Uint8Array | Promise<Uint8Array>;
 	omitReferences?: boolean;
 	reference?: Uri;
+	/** Current user query, used to bias vision-sidecar descriptions toward relevance. */
+	userPrompt?: string;
 }
 
 /**
@@ -64,25 +69,52 @@ export class Image extends PromptElement<ImageProps, unknown> {
 		@IAuthenticationService private readonly authService: IAuthenticationService,
 		@ILogService private readonly logService: ILogService,
 		@IImageService private readonly imageService: IImageService,
-		@IConfigurationService private readonly configurationService: IConfigurationService
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IOmenImageAnalysisService private readonly imageAnalysisService: IOmenImageAnalysisService,
 	) {
 		super(props);
 	}
 
 	override async render(_state: unknown, sizing: PromptSizing) {
-		const options = { status: { description: l10n.t("{0} does not support images.", this.promptEndpoint.model), kind: ChatResponseReferencePartStatusKind.Omitted } };
+		const omittedOptions = { status: { description: l10n.t("{0} does not support images.", this.promptEndpoint.model), kind: ChatResponseReferencePartStatusKind.Omitted } };
+		const describedOptions = { status: { description: l10n.t("Image described for {0}.", this.promptEndpoint.model), kind: ChatResponseReferencePartStatusKind.Complete } };
 
 		const fillerUri: Uri = this.props.reference ?? Uri.parse('Attached Image');
 
 		try {
 			if (!this.promptEndpoint.supportsVision) {
+				const variable = await this.props.variableValue;
+				const description = this.imageAnalysisService.isEnabled()
+					? await this.imageAnalysisService.analyzeImage({
+						imageData: variable,
+						mimeType: getMimeType(Buffer.from(variable).toString('base64')),
+						userPrompt: this.props.userPrompt,
+						imageLabel: this.props.variableName,
+					}, CancellationToken.None)
+					: undefined;
+
+				if (description) {
+					return (
+						<>
+							<Tag name='attachment' attrs={this.props.variableName ? { id: this.props.variableName, type: 'image-description' } : { type: 'image-description' }}>
+								<TextChunk>
+									{`Image description (analyzed for relevance to the user's request):\n${description}`}
+								</TextChunk>
+							</Tag>
+							{!this.props.omitReferences && (
+								<references value={[new PromptReference(this.props.variableName ? { variableName: this.props.variableName, value: fillerUri } : fillerUri, undefined, describedOptions)]} />
+							)}
+						</>
+					);
+				}
+
 				if (this.props.omitReferences) {
 					return;
 				}
 
 				return (
 					<>
-						<references value={[new PromptReference(this.props.variableName ? { variableName: this.props.variableName, value: fillerUri } : fillerUri, undefined, options)]} />
+						<references value={[new PromptReference(this.props.variableName ? { variableName: this.props.variableName, value: fillerUri } : fillerUri, undefined, omittedOptions)]} />
 					</>
 				);
 			}
@@ -121,7 +153,7 @@ export class Image extends PromptElement<ImageProps, unknown> {
 
 			return (
 				<>
-					<references value={[new PromptReference(this.props.variableName ? { variableName: this.props.variableName, value: fillerUri } : fillerUri, undefined, options)]} />
+					<references value={[new PromptReference(this.props.variableName ? { variableName: this.props.variableName, value: fillerUri } : fillerUri, undefined, omittedOptions)]} />
 				</>);
 		}
 	}

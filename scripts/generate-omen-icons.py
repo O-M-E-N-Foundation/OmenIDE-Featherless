@@ -1,12 +1,12 @@
-/*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
- *--------------------------------------------------------------------------------------------*/
 #!/usr/bin/env python3
-"""Generate Omen IDE platform icons from resources/omen/app-icon.svg or .png."""
+"""Generate Omen IDE platform icons from resources/omen/app-icon.svg or .png.
+
+Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+"""
 
 from __future__ import annotations
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -27,7 +27,19 @@ LINUX = REPO / 'resources' / 'linux'
 SERVER = REPO / 'resources' / 'server'
 WEB = REPO / 'resources' / 'web'
 WORKBENCH_MEDIA = REPO / 'src' / 'vs' / 'workbench' / 'browser' / 'media'
+EDITOR_LETTERPRESS_MEDIA = REPO / 'src' / 'vs' / 'workbench' / 'browser' / 'parts' / 'editor' / 'media'
+SESSIONS_LETTERPRESS_MEDIA = REPO / 'src' / 'vs' / 'sessions' / 'contrib' / 'chat' / 'browser' / 'media'
 GITHUB_AUTH_MEDIA = REPO / 'extensions' / 'github-authentication' / 'media'
+
+# Empty-editor watermark SVGs (letterpress) — opacity tuned per theme.
+LETTERPRESS_SVGS: dict[Path, float] = {
+	EDITOR_LETTERPRESS_MEDIA / 'letterpress-dark.svg': 0.28,
+	EDITOR_LETTERPRESS_MEDIA / 'letterpress-light.svg': 0.22,
+	EDITOR_LETTERPRESS_MEDIA / 'letterpress-hcDark.svg': 0.35,
+	EDITOR_LETTERPRESS_MEDIA / 'letterpress-hcLight.svg': 0.30,
+	SESSIONS_LETTERPRESS_MEDIA / 'letterpress-sessions-dark.svg': 0.28,
+	SESSIONS_LETTERPRESS_MEDIA / 'letterpress-sessions-light.svg': 0.22,
+}
 
 FORCE_RASTERIZE = '--rasterize' in sys.argv  # kept for backward compatibility; tracing now handles PNG-newer-than-SVG
 
@@ -58,6 +70,29 @@ def sync_svg_copies() -> None:
 		dest.parent.mkdir(parents=True, exist_ok=True)
 		shutil.copy2(SOURCE_SVG, dest)
 		print(f'Synced {dest.relative_to(REPO)}')
+
+
+def _extract_svg_inner(svg_path: Path) -> str:
+	text = svg_path.read_text(encoding='utf-8')
+	match = re.search(r'<svg[^>]*>(.*)</svg>', text, re.DOTALL)
+	if not match:
+		raise RuntimeError(f'Could not parse SVG contents: {svg_path}')
+	return match.group(1).strip()
+
+
+def sync_letterpress_svgs() -> None:
+	"""Watermark logos shown in empty editor groups and Sessions chat."""
+	inner = _extract_svg_inner(SOURCE_SVG)
+	for dest, opacity in LETTERPRESS_SVGS.items():
+		dest.parent.mkdir(parents=True, exist_ok=True)
+		dest.write_text(
+			(
+				f'<svg width="260" height="260" viewBox="0 0 256 256" opacity="{opacity}" '
+				f'xmlns="http://www.w3.org/2000/svg">\n{inner}\n</svg>\n'
+			),
+			encoding='utf-8',
+		)
+		print(f'Synced {dest.relative_to(REPO)} (opacity={opacity})')
 
 
 def resize_png(source: Image.Image, size: int, dest: Path) -> None:
@@ -132,6 +167,7 @@ def main() -> None:
 
 	print(f'Using source: {SOURCE_SVG}')
 	sync_svg_copies()
+	sync_letterpress_svgs()
 	image = Image.open(SOURCE_PNG).convert('RGBA')
 
 	for dest, size in PNG_SIZES.items():

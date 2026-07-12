@@ -7,6 +7,7 @@
 	display: flex;
 	flex-direction: column;
 	height: 100%;
+	width: 100%;
 	overflow: hidden;
 	background: var(--vscode-editor-background);
 	color: var(--vscode-foreground);
@@ -14,6 +15,7 @@
 
 .omen-settings-editor .omen-settings-split {
 	height: 100%;
+	width: 100%;
 }
 
 .omen-settings-editor .omen-settings-sidebar {
@@ -25,6 +27,64 @@
 	gap: 8px;
 	background: var(--vscode-sideBar-background);
 	border-right: 1px solid var(--vscode-sideBar-border, transparent);
+}
+
+.omen-settings-editor .omen-settings-account-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 8px 12px;
+	border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+	margin-bottom: 4px;
+}
+
+.omen-settings-editor .omen-settings-account-avatar {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	font-size: 13px;
+	font-weight: 600;
+	background: color-mix(in srgb, var(--vscode-button-background) 80%, transparent);
+	color: var(--vscode-button-foreground);
+}
+
+.omen-settings-editor .omen-settings-account-text {
+	min-width: 0;
+	flex: 1;
+}
+
+.omen-settings-editor .omen-settings-account-title {
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.omen-settings-editor .omen-settings-account-subtitle {
+	font-size: 11px;
+	opacity: 0.75;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.omen-settings-editor .omen-settings-plan-badge {
+	flex-shrink: 0;
+	font-size: 10px;
+	font-weight: 600;
+	padding: 2px 6px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--vscode-button-background) 25%, transparent);
+	color: var(--vscode-button-background);
+	max-width: 72px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .omen-settings-editor .omen-settings-sidebar-title {
@@ -71,9 +131,17 @@
 
 .omen-settings-editor .omen-settings-content {
 	height: 100%;
+	width: 100%;
 	overflow: auto;
 	padding: 24px 32px 48px;
 	box-sizing: border-box;
+	container-type: inline-size;
+	container-name: omen-settings-content;
+}
+
+.omen-settings-editor .omen-settings-content-inner {
+	width: 100%;
+	max-width: 920px;
 }
 
 .omen-settings-editor .omen-settings-section-title {
@@ -90,10 +158,19 @@
 	background: var(--vscode-editor-background);
 }
 
+.omen-settings-editor .omen-settings-group-heading {
+	padding: 10px 16px 4px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	opacity: 0.7;
+}
+
 .omen-settings-editor .omen-settings-row {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
-	gap: 16px;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 16px 24px;
 	align-items: center;
 	padding: 14px 16px;
 	border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
@@ -101,6 +178,10 @@
 
 .omen-settings-editor .omen-settings-row:first-child {
 	border-top: none;
+}
+
+.omen-settings-editor .omen-settings-group-heading + .omen-settings-row {
+	border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
 }
 
 .omen-settings-editor .omen-settings-row-label {
@@ -120,11 +201,28 @@
 	justify-content: flex-end;
 	align-items: center;
 	gap: 8px;
+	min-width: 0;
+}
+
+.omen-settings-editor .omen-settings-row-control .monaco-text-button {
+	width: auto;
+	min-width: max-content;
+	white-space: nowrap;
+}
+
+/* Text/select controls need a usable width without forcing a huge empty column. */
+.omen-settings-editor .omen-settings-row-control:has(input[type="text"]),
+.omen-settings-editor .omen-settings-row-control:has(input[type="number"]),
+.omen-settings-editor .omen-settings-row-control:has(select) {
+	width: min(280px, 42vw);
+	max-width: 100%;
 }
 
 .omen-settings-editor .omen-settings-row-control input[type="text"],
-.omen-settings-editor .omen-settings-row-control input[type="number"] {
+.omen-settings-editor .omen-settings-row-control input[type="number"],
+.omen-settings-editor .omen-settings-row-control select {
 	width: 100%;
+	min-width: 140px;
 	box-sizing: border-box;
 	padding: 6px 8px;
 	border: 1px solid var(--vscode-input-border, transparent);
@@ -137,6 +235,7 @@
 .omen-settings-editor .omen-settings-row-control input[type="checkbox"] {
 	width: 18px;
 	height: 18px;
+	flex-shrink: 0;
 }
 
 .omen-settings-editor .omen-settings-status {
@@ -167,6 +266,296 @@
 	text-decoration: underline;
 }
 
+.omen-settings-editor .omen-settings-signout-footer {
+	margin-top: 24px;
+	padding-top: 16px;
+	border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+}
+
+.omen-settings-editor .omen-settings-plan-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.omen-settings-editor .omen-settings-plan-card {
+	border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+	border-radius: 8px;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	background: var(--vscode-editor-background);
+}
+
+.omen-settings-editor .omen-settings-plan-card-label {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	opacity: 0.7;
+}
+
+.omen-settings-editor .omen-settings-plan-card-title {
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.omen-settings-editor .omen-settings-plan-card-meta {
+	font-size: 12px;
+	opacity: 0.8;
+	line-height: 1.4;
+}
+
+.omen-settings-editor .omen-settings-usage-row {
+	display: grid;
+	grid-template-columns: 80px 1fr auto;
+	gap: 12px;
+	align-items: center;
+	padding: 14px 16px;
+}
+
+.omen-settings-editor .omen-settings-usage-label {
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.omen-settings-editor .omen-settings-usage-bar {
+	height: 8px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+	overflow: hidden;
+}
+
+.omen-settings-editor .omen-settings-usage-bar-fill {
+	height: 100%;
+	border-radius: inherit;
+	background: var(--vscode-button-background);
+}
+
+.omen-settings-editor .omen-settings-usage-value {
+	font-size: 12px;
+	opacity: 0.85;
+	white-space: nowrap;
+}
+
+.omen-settings-editor .omen-settings-usage-hint {
+	padding: 0 16px 14px;
+	font-size: 12px;
+	opacity: 0.7;
+}
+
+.omen-settings-editor .omen-settings-empty,
+.omen-settings-editor .omen-settings-empty-card {
+	padding: 16px;
+	font-size: 13px;
+	opacity: 0.85;
+}
+
+.omen-settings-editor .omen-settings-empty-card {
+	border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+	border-radius: 8px;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 12px;
+}
+
+.omen-settings-editor .omen-settings-model-search {
+	padding: 0;
+	border-bottom: none;
+}
+
+.omen-settings-editor .omen-settings-model-toolbar {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
+}
+
+.omen-settings-editor .omen-settings-group-description {
+	padding: 0 16px 12px;
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.omen-settings-editor .omen-settings-model-search input {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 8px 10px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 4px;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font: inherit;
+}
+
+.omen-settings-editor .omen-settings-model-filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.omen-settings-editor .omen-settings-filter-chip {
+	border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+	border-radius: 4px;
+	background: var(--vscode-button-secondaryBackground, transparent);
+	color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+	padding: 4px 10px;
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.omen-settings-editor .omen-settings-filter-chip:hover {
+	background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.15));
+}
+
+.omen-settings-editor .omen-settings-filter-chip.active {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border-color: var(--vscode-button-background);
+}
+
+.omen-settings-editor .omen-settings-model-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+}
+
+.omen-settings-editor .omen-settings-control-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.omen-settings-editor .omen-settings-control-label select {
+	min-width: 140px;
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-dropdown-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+	border-radius: 4px;
+	background: var(--vscode-dropdown-background, var(--vscode-input-background));
+	color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+	font: inherit;
+}
+
+.omen-settings-editor .omen-settings-model-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+}
+
+.omen-settings-editor .omen-settings-action-btn {
+	border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+	border-radius: 3px;
+	background: transparent;
+	color: var(--vscode-foreground);
+	padding: 2px 8px;
+	font: inherit;
+	font-size: 11px;
+	line-height: 16px;
+	cursor: pointer;
+	width: auto;
+	height: auto;
+	min-width: 0;
+}
+
+.omen-settings-editor .omen-settings-action-btn:hover:not(:disabled) {
+	background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+
+.omen-settings-editor .omen-settings-action-btn:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.omen-settings-editor .omen-settings-model-status {
+	padding: 8px 16px 0;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.omen-settings-editor .omen-settings-model-list {
+	max-height: none;
+	overflow: visible;
+}
+
+.omen-settings-editor .omen-settings-model-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 12px;
+	align-items: start;
+	padding: 12px 16px;
+	border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
+}
+
+.omen-settings-editor .omen-settings-model-list .omen-settings-model-row:first-child {
+	border-top: none;
+}
+
+.omen-settings-editor .omen-settings-model-row-main {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.omen-settings-editor .omen-settings-model-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 2px;
+}
+
+.omen-settings-editor .omen-settings-model-badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.omen-settings-editor .omen-settings-model-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 6px;
+	border-radius: 3px;
+	font-size: 11px;
+	line-height: 1.4;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+}
+
+.omen-settings-editor .omen-settings-model-badge-gated {
+	background: var(--vscode-inputValidation-warningBackground, rgba(255, 200, 0, 0.15));
+	color: var(--vscode-inputValidation-warningForeground, var(--vscode-editorWarning-foreground));
+}
+
+.omen-settings-editor .omen-settings-model-details {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.omen-settings-editor .omen-settings-model-pager {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 8px 16px 12px;
+	border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
+}
+
+.omen-settings-editor .omen-settings-model-page-label {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	min-width: 4em;
+	text-align: center;
+}
+
 @media (max-width: 720px) {
 	.omen-settings-editor .omen-settings-row {
 		grid-template-columns: 1fr;
@@ -174,5 +563,36 @@
 
 	.omen-settings-editor .omen-settings-row-control {
 		justify-content: flex-start;
+	}
+
+	.omen-settings-editor .omen-settings-row-control:has(input[type="text"]),
+	.omen-settings-editor .omen-settings-row-control:has(input[type="number"]),
+	.omen-settings-editor .omen-settings-row-control:has(select) {
+		width: 100%;
+	}
+
+	.omen-settings-editor .omen-settings-usage-row {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* Editor panes don't match viewport media queries — stack when the content pane itself is narrow. */
+@container omen-settings-content (max-width: 640px) {
+	.omen-settings-row {
+		grid-template-columns: 1fr;
+	}
+
+	.omen-settings-row-control {
+		justify-content: flex-start;
+	}
+
+	.omen-settings-row-control:has(input[type="text"]),
+	.omen-settings-row-control:has(input[type="number"]),
+	.omen-settings-row-control:has(select) {
+		width: 100%;
+	}
+
+	.omen-settings-usage-row {
+		grid-template-columns: 1fr;
 	}
 }

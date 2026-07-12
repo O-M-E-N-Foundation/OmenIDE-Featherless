@@ -27,14 +27,15 @@ import { ILifecycleService } from '../../../../services/lifecycle/common/lifecyc
 import { IWorkspaceEditingService } from '../../../../services/workspaces/common/workspaceEditing.js';
 import { awaitStatsForSession } from '../chat.js';
 import { IChatSessionStats, IChatSessionTiming, ResponseModelState } from '../chatService/chatService.js';
-import { ChatAgentLocation, ChatPermissionLevel } from '../constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatPermissionLevel } from '../constants.js';
 import { ModifiedFileEntryState } from '../editing/chatEditingService.js';
-import { ChatModel, ISerializableChatData, ISerializableChatDataIn, ISerializableChatModelInputState, ISerializableChatsData, ISerializedChatDataReference, normalizeSerializableChatData } from './chatModel.js';
+import { ChatModel, IExportableChatData, ISerializableChatData, ISerializableChatDataIn, ISerializableChatModelInputState, ISerializableChatsData, ISerializedChatDataReference, isSerializableSessionData, normalizeSerializableChatData } from './chatModel.js';
 import { ChatSessionOperationLog } from './chatSessionOperationLog.js';
 import { LocalChatSessionUri } from './chatUri.js';
 import { stringifyEntryWithFallback } from './objectMutationLog.js';
 
-const maxPersistedSessions = 50;
+const defaultHistoryRetentionDays = 30;
+const msPerDay = 24 * 60 * 60 * 1000;
 
 const ChatIndexStorageKey = 'chat.ChatSessionStore.index';
 const ChatTransferIndexStorageKey = 'ChatSessionStore.transferIndex';
@@ -435,20 +436,86 @@ export class ChatSessionStore extends Disposable {
 		return isEmptyWindow ? StorageScope.APPLICATION : StorageScope.WORKSPACE;
 	}
 
+	private getHistoryRetentionDays(): number {
+		const value = this.configurationService.getValue<number>(ChatConfiguration.HistoryRetentionDays);
+		return typeof value === 'number' && value >= 0 ? value : defaultHistoryRetentionDays;
+	}
+
 	private async trimEntries(): Promise<void> {
+		const retentionDays = this.getHistoryRetentionDays();
+		if (retentionDays === 0) {
+			// 0 = keep forever
+			return;
+		}
+
+		const cutoff = Date.now() - retentionDays * msPerDay;
 		const index = this.internalGetIndex();
-		const entries = Object.entries(index.entries)
-			.filter(([_id, entry]) => !entry.isExternal)
-			.sort((a, b) => b[1].lastMessageDate - a[1].lastMessageDate)
+		const entriesToDelete = Object.entries(index.entries)
+			.filter(([_id, entry]) => !entry.isExternal && entry.lastMessageDate < cutoff)
 			.map(([id]) => id);
 
-		if (entries.length > maxPersistedSessions) {
-			const entriesToDelete = entries.slice(maxPersistedSessions);
-			for (const entry of entriesToDelete) {
-				delete index.entries[entry];
+		if (entriesToDelete.length === 0) {
+			return;
+		}
+
+		for (const entry of entriesToDelete) {
+			await this.internalDeleteSession(entry);
+		}
+
+		this.logService.trace(`ChatSessionStore: Trimmed ${entriesToDelete.length} chat sessions older than ${retentionDays} days`);
+	}
+
+	/**
+	 * When the index is empty/missing but session files remain on disk, rebuild
+	 * index metadata so history survives index loss (e.g. partial wipe/corruption).
+	 */
+	private async recoverIndexFromDiskIfNeeded(): Promise<void> {
+		const index = this.internalGetIndex();
+		if (Object.keys(index.entries).length > 0) {
+			return;
+		}
+
+		try {
+			if (!(await this.fileService.exists(this.storageRoot))) {
+				return;
 			}
 
-			this.logService.trace(`ChatSessionStore: Trimmed ${entriesToDelete.length} old chat sessions from index`);
+			const directory = await this.fileService.resolve(this.storageRoot);
+			if (!directory.children?.length) {
+				return;
+			}
+
+			const sessionIds = new Set<string>();
+			for (const child of directory.children) {
+				if (!child.isFile) {
+					continue;
+				}
+				const name = child.name;
+				if (name.endsWith('.jsonl')) {
+					sessionIds.add(name.slice(0, -'.jsonl'.length));
+				} else if (name.endsWith('.json')) {
+					sessionIds.add(name.slice(0, -'.json'.length));
+				}
+			}
+
+			let recovered = 0;
+			for (const sessionId of sessionIds) {
+				const storageLocation = this.getStorageLocation(sessionId);
+				const sessionRef = await this.readSessionFromLocation(storageLocation.flat, storageLocation.log, sessionId);
+				if (!sessionRef) {
+					continue;
+				}
+
+				index.entries[sessionId] = await getSessionMetadata(sessionRef.value);
+				recovered++;
+			}
+
+			if (recovered > 0) {
+				this.logService.info(`ChatSessionStore: Recovered ${recovered} chat sessions from disk into index`);
+				await this.flushIndex();
+			}
+		} catch (e) {
+			this.reportError('indexRecover', 'Error recovering chat session index from disk', e);
 		}
 	}
 
@@ -611,6 +678,10 @@ export class ChatSessionStore extends Disposable {
 					await this.migrate(initialData);
 				}
 			}
+
+			await this.recoverIndexFromDiskIfNeeded();
+			await this.trimEntries();
+			await this.flushIndex();
 		});
 	}
 
@@ -638,8 +709,10 @@ export class ChatSessionStore extends Disposable {
 
 		if (logStorageLocation) {
 			try {
-				rawData = (await this.fileService.readFile(logStorageLocation)).value;
-				fromLocation = logStorageLocation;
+				if (await this.fileService.exists(logStorageLocation)) {
+					rawData = (await this.fileService.readFile(logStorageLocation)).value;
+					fromLocation = logStorageLocation;
+				}
 			} catch (e) {
 				this.reportError('sessionReadFile', `Error reading log chat session file ${sessionId}`, e);
 			}
@@ -688,6 +761,30 @@ export class ChatSessionStore extends Disposable {
 
 			return { value: normalizeSerializableChatData(session), serializer: log };
 		} catch (err) {
+			// Log parse can fail when a file service returns empty/default content for a
+			// missing .jsonl; fall back to the flat JSON file before giving up.
+			if (fromLocation === logStorageLocation) {
+				try {
+					const flatData = (await this.fileService.readFile(flatStorageLocation)).value;
+					const session = revive(JSON.parse(flatData.toString())) as ISerializableChatDataIn;
+					for (const request of session.requests) {
+						if (Array.isArray(request.response)) {
+							request.response = request.response.map((response) => {
+								if (typeof response === 'string') {
+									return new MarkdownString(response);
+								}
+								return response;
+							});
+						} else if (typeof request.response === 'string') {
+							request.response = [new MarkdownString(request.response)];
+						}
+					}
+					return { value: normalizeSerializableChatData(session), serializer: new ChatSessionOperationLog() };
+				} catch {
+					// continue to report the original error below
+				}
+			}
+
 			this.reportError('malformedSession', `Malformed session data in ${fromLocation.fsPath}: [${rawData.slice(0, 20).toString()}${rawData.byteLength > 20 ? '...' : ''}]`, err);
 			return undefined;
 		}
@@ -872,22 +969,40 @@ function getSessionMetadataSync(session: ChatModel): IChatSessionEntryMetadata {
 	};
 }
 
-async function getSessionMetadata(session: ChatModel | ISerializableChatData): Promise<IChatSessionEntryMetadata> {
+async function getSessionMetadata(session: ChatModel | ISerializableChatData | IExportableChatData): Promise<IChatSessionEntryMetadata> {
 	if (session instanceof ChatModel) {
 		const metadata = getSessionMetadataSync(session);
 		metadata.stats = await awaitStatsForSession(session);
 		return metadata;
 	}
 
-	// ISerializableChatData — only used in the old pre-fs storage data migration scenario
-	const lastMessageDate = session.requests.at(-1)?.timestamp ?? session.creationDate;
+	// Serialized / exportable session data - used in migration and index recovery
+	if (isSerializableSessionData(session)) {
+		const lastMessageDate = session.requests.at(-1)?.timestamp ?? session.creationDate;
+		return {
+			sessionId: session.sessionId,
+			title: session.customTitle || localize('newChat', "New Chat"),
+			lastMessageDate,
+			timing: {
+				created: session.creationDate,
+				lastRequestStarted: session.requests.at(-1)?.timestamp,
+				lastRequestEnded: lastMessageDate,
+			},
+			initialLocation: session.initialLocation,
+			hasPendingEdits: false,
+			isEmpty: session.requests.length === 0,
+			isExternal: false,
+			lastResponseState: ResponseModelState.Complete,
+		};
+	}
 
+	const lastMessageDate = session.requests.at(-1)?.timestamp ?? Date.now();
 	return {
-		sessionId: session.sessionId,
-		title: session.customTitle || localize('newChat', "New Chat"),
+		sessionId: '',
+		title: localize('newChat', "New Chat"),
 		lastMessageDate,
 		timing: {
-			created: session.creationDate,
+			created: lastMessageDate,
 			lastRequestStarted: session.requests.at(-1)?.timestamp,
 			lastRequestEnded: lastMessageDate,
 		},

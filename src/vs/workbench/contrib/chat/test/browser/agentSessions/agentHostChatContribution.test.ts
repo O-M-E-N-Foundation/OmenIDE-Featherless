@@ -42,6 +42,7 @@ import { IChatResponseFileChangesService } from '../../../browser/chatResponseFi
 import { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IChatSessionsService, type IChatSession, type IChatSessionItemController, type IChatSessionRequestHistoryItem, type IChatSessionsExtensionPoint } from '../../../common/chatSessionsService.js';
 import { ILanguageModelsService, type ILanguageModelChatMetadata } from '../../../common/languageModels.js';
+import { IOmenImageAnalysisService } from '../../../common/omenImageAnalysis.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
@@ -619,6 +620,11 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 		deltaLanguageModelChatProviderDescriptors: () => { },
 		registerLanguageModelProvider: () => toDisposable(() => { }),
 		lookupLanguageModel: (modelId: string) => languageModels?.get(modelId),
+	});
+	instantiationService.stub(IOmenImageAnalysisService, {
+		_serviceBrand: undefined,
+		isEnabled: () => false,
+		analyzeImage: async () => undefined,
 	});
 	instantiationService.stub(IConfigurationService, {
 		onDidChangeConfiguration: Event.None,

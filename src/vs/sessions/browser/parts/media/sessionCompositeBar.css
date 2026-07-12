@@ -1,0 +1,180 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Session-level tab strip (Cursor-style). Reuses chat tab visual tokens. */
+.session-composite-bar {
+	display: flex;
+	flex-direction: column;
+	background-color: var(--session-view-background);
+	color: var(--session-view-foreground);
+	flex-shrink: 0;
+	overflow: hidden;
+	padding: 4px 10px 0;
+	box-sizing: border-box;
+	container-type: inline-size;
+	border-bottom: 1px solid color-mix(in srgb, var(--session-view-foreground) 12%, transparent);
+}
+
+.session-composite-bar-tabs-row {
+	display: flex;
+	align-items: center;
+	height: 35px;
+	overflow: hidden;
+}
+
+.session-composite-bar-tabs-row > .monaco-scrollable-element {
+	flex: 0 1 auto;
+	min-width: 0;
+	height: 100%;
+}
+
+.session-composite-bar-tabs {
+	display: flex;
+	align-items: center;
+	height: 100%;
+	gap: 4px;
+}
+
+.session-composite-bar-tabs-row > .session-composite-bar-new-session {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	margin-left: 4px;
+}
+
+.session-composite-bar-new-session .action-item .action-label {
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--vscode-cornerRadius-small);
+	color: var(--chat-tab-inactive-foreground, currentColor);
+}
+
+.session-composite-bar-new-session .action-item .action-label:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--chat-tab-active-foreground);
+}
+
+.session-composite-bar-new-session .action-item .action-label:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.session-composite-bar-tab {
+	display: flex;
+	align-items: center;
+	position: relative;
+	padding: 0 8px;
+	cursor: pointer;
+	color: var(--chat-tab-inactive-foreground);
+	font-weight: var(--vscode-agents-fontWeight-semiBold, 600);
+	font-size: var(--vscode-agents-fontSize-label1, 12px);
+	line-height: 22px;
+	height: 26px;
+	border-radius: var(--vscode-cornerRadius-small);
+	background-color: color-mix(in srgb, var(--vscode-agentsPanel-foreground, var(--vscode-foreground)) 4%, transparent);
+	user-select: none;
+	flex-shrink: 0;
+	max-width: min(220px, 35cqi);
+	gap: 4px;
+}
+
+.session-composite-bar-tab-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.session-composite-bar-tab:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.session-composite-bar-tab.active {
+	color: var(--chat-tab-active-foreground, var(--session-view-foreground));
+	background-color: color-mix(in srgb, var(--vscode-agentsPanel-foreground, var(--vscode-foreground)) 10%, transparent);
+}
+
+.session-composite-bar-tab:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.session-composite-bar-tab-pin {
+	display: none;
+	font-size: var(--vscode-codiconFontSize-compact, 12px);
+	flex-shrink: 0;
+	opacity: 0.7;
+}
+
+.session-composite-bar-tab.sticky .session-composite-bar-tab-pin {
+	display: inline-flex;
+}
+
+.session-composite-bar-tab-indicator {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 10px;
+	height: 10px;
+}
+
+.session-composite-bar-tab.unread .session-composite-bar-tab-indicator,
+.session-composite-bar-tab.needs-input .session-composite-bar-tab-indicator,
+.session-composite-bar-tab.in-progress .session-composite-bar-tab-indicator {
+	display: inline-flex;
+}
+
+.session-composite-bar-tab.unread .session-composite-bar-tab-indicator::before,
+.session-composite-bar-tab.needs-input .session-composite-bar-tab-indicator::before {
+	content: '';
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background-color: var(--vscode-activityBarBadge-background, var(--vscode-badge-background));
+}
+
+.session-composite-bar-tab.needs-input .session-composite-bar-tab-indicator::before {
+	background-color: var(--vscode-inputValidation-warningBorder, #cca700);
+}
+
+.session-composite-bar-tab.in-progress .session-composite-bar-tab-indicator::before {
+	display: none;
+}
+
+.session-composite-bar-tab-indicator-icon {
+	font-size: var(--vscode-fontSize-label3);
+}
+
+.session-composite-bar-tab-actions {
+	display: none;
+	align-items: center;
+	margin-left: 2px;
+	flex-shrink: 0;
+}
+
+.session-composite-bar-tab:hover .session-composite-bar-tab-actions,
+.session-composite-bar-tab.active .session-composite-bar-tab-actions,
+.session-composite-bar-tab:focus-within .session-composite-bar-tab-actions {
+	display: flex;
+}
+
+.session-composite-bar-tab-actions .action-item .action-label {
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--vscode-cornerRadius-small);
+	color: var(--chat-tab-inactive-foreground, currentColor);
+}
+
+.session-composite-bar-tab-actions .action-item .action-label:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--chat-tab-active-foreground);
+}

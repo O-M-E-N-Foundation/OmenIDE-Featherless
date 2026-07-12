@@ -14,10 +14,11 @@ import { assertReturnsDefined } from '../../../base/common/types.js';
 import { LayoutPriority } from '../../../base/browser/ui/splitview/splitview.js';
 import { Direction, SerializableGrid, Sizing } from '../../../base/browser/ui/grid/grid.js';
 import { Part } from '../../../workbench/browser/part.js';
-import { ActiveSessionsContext, MultipleSessionsVisibleContext, SessionsFocusContext } from '../../common/contextkeys.js';
+import { ActiveSessionsContext, MultipleSessionTabsVisibleContext, MultipleSessionsVisibleContext, SessionsFocusContext } from '../../common/contextkeys.js';
 import { $, addDisposableGenericMouseDownListener, addDisposableListener, EventType, isAncestor, trackFocus } from '../../../base/browser/dom.js';
 import { IActiveSession } from '../../services/sessions/common/sessionsManagement.js';
 import { SessionView } from './sessionView.js';
+import { SessionCompositeBar } from './sessionCompositeBar.js';
 import { DisposableStore, IDisposable } from '../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Color } from '../../../base/common/color.js';
@@ -70,6 +71,16 @@ export class SessionsPart extends Part {
 	private _progressBar: ProgressBar | undefined;
 	private _progressIndicator: IProgressIndicator | undefined;
 
+	/** Cursor-style session tab strip spanning the sessions part. */
+	protected _sessionCompositeBar: SessionCompositeBar | undefined;
+
+	/**
+	 * When true, visible sessions render side-by-side in the grid (Alt+click /
+	 * open to the side / drag). When false (default), only the active session
+	 * is shown in a single pane while all open sessions appear as tabs.
+	 */
+	private _splitViewEnabled = false;
+
 	/**
 	 * Session views mounted in the grid, in display order (left-to-right). Slots
 	 * are reused across reconciliations: only the slot count changes with the
@@ -87,6 +98,7 @@ export class SessionsPart extends Part {
 	protected _lastLayout: { readonly width: number; readonly height: number; readonly top: number; readonly left: number } | undefined;
 
 	private readonly _multipleSessionsVisibleKey: IContextKey<boolean>;
+	private readonly _multipleSessionTabsVisibleKey: IContextKey<boolean>;
 	private readonly _sessionsFocusKey: IContextKey<boolean>;
 
 	/**
@@ -124,6 +136,7 @@ export class SessionsPart extends Part {
 		ActiveSessionsContext.bindTo(contextKeyService);
 		this._sessionsFocusKey = SessionsFocusContext.bindTo(contextKeyService);
 		this._multipleSessionsVisibleKey = MultipleSessionsVisibleContext.bindTo(contextKeyService);
+		this._multipleSessionTabsVisibleKey = MultipleSessionTabsVisibleContext.bindTo(contextKeyService);
 	}
 
 	/**
@@ -176,6 +189,12 @@ export class SessionsPart extends Part {
 		this._progressBar = this._register(new ProgressBar(contentArea, defaultProgressBarStyles));
 		this._progressBar.hide();
 
+		// Session tab strip (Cursor-style) above the session content.
+		this._sessionCompositeBar = this._register(this.instantiationService.createInstance(SessionCompositeBar));
+		contentArea.appendChild(this._sessionCompositeBar.element);
+		this._register(this._sessionCompositeBar.onDidChangeHeight(() => this._relayoutFromLast()));
+		this._register(this._sessionCompositeBar.onDidChangeVisibility(() => this._relayoutFromLast()));
+
 		// Seed the grid with a placeholder slot so SerializableGrid always has
 		// at least one leaf. Rebound to a session when visible sessions appear.
 		const placeholder = this._createSlot();
@@ -213,14 +232,27 @@ export class SessionsPart extends Part {
 	 * existing {@link SessionView} slots, growing or shrinking the pool only when
 	 * the number of visible sessions changes, and rebinds each slot to its
 	 * session by position via {@link SessionView.openSession}.
+	 *
+	 * Default (tabs) mode shows a single pane for the active session while the
+	 * session tab strip lists all open sessions. Split mode (open to the side)
+	 * restores the multi-pane grid.
 	 */
-	updateVisibleSessions(visible: readonly (IActiveSession | undefined)[], active: IActiveSession | undefined): void {
+	updateVisibleSessions(visible: readonly (IActiveSession | undefined)[], active: IActiveSession | undefined, options?: { splitView?: boolean }): void {
 		if (!this._gridWidget) {
 			return;
 		}
 
+		const realCount = visible.filter(s => !!s).length;
+		if (options?.splitView !== undefined) {
+			this._splitViewEnabled = options.splitView;
+		}
+		if (realCount <= 1) {
+			this._splitViewEnabled = false;
+		}
+
+		const useSplitGrid = this._splitViewEnabled && visible.length > 1;
 		// Always keep at least one slot (a placeholder when no sessions are visible).
-		const desiredCount = Math.max(visible.length, 1);
+		const desiredCount = useSplitGrid ? Math.max(visible.length, 1) : 1;
 
 		// Grow the pool by appending new slots to the right.
 		while (this._slots.length < desiredCount) {
@@ -238,9 +270,10 @@ export class SessionsPart extends Part {
 		}
 
 		// Rebind each slot to its session by position (or to undefined placeholder).
+		// In tabs mode only the active session (or empty New Session slot) is shown.
 		for (let i = 0; i < this._slots.length; i++) {
 			const slot = this._slots[i];
-			const session = visible[i];
+			const session = useSplitGrid ? visible[i] : active;
 			slot.boundSessionId = session?.sessionId;
 			slot.view.openSession(session, { renderSessionTypePickerInControls: this._renderSessionTypePickerInControls });
 		}
@@ -263,11 +296,13 @@ export class SessionsPart extends Part {
 			}
 		}
 
-		this._updateContextKeys(visible);
+		this._sessionCompositeBar?.bind(visible, active);
+		this._updateContextKeys(visible, useSplitGrid);
 	}
 
-	private _updateContextKeys(visible: readonly (IActiveSession | undefined)[]): void {
-		this._multipleSessionsVisibleKey.set(visible.length > 1);
+	private _updateContextKeys(visible: readonly (IActiveSession | undefined)[], useSplitGrid: boolean): void {
+		this._multipleSessionsVisibleKey.set(useSplitGrid && visible.length > 1);
+		this._multipleSessionTabsVisibleKey.set(visible.filter(s => !!s).length > 1 || (visible.length > 1 && visible.some(s => !s)));
 	}
 
 	/**
@@ -315,6 +350,9 @@ export class SessionsPart extends Part {
 	 * Returns the {@link SessionView} currently hosting the given session id, or
 	 * the placeholder (new-session) view when `sessionId` is `undefined`. Returns
 	 * `undefined` if no matching slot exists in the grid.
+	 *
+	 * In tabs (single-pane) mode only the active session is mounted, so inactive
+	 * session ids resolve to `undefined` until activated.
 	 */
 	getSessionView(sessionId: string | undefined): SessionView | undefined {
 		return this._slots.find(s => s.boundSessionId === sessionId)?.view;
@@ -434,11 +472,20 @@ export class SessionsPart extends Part {
 			height - SessionsPart.MARGIN_TOP - marginBottom - borderTotal
 		);
 
-		// Layout the internal grid widget within the content area.
-		this._gridWidget?.layout(contentSize.width, contentSize.height, top, left);
+		const tabBarHeight = this._sessionCompositeBar?.height ?? 0;
+
+		// Layout the internal grid widget within the content area below the tab strip.
+		this._gridWidget?.layout(contentSize.width, Math.max(0, contentSize.height - tabBarHeight), top, left);
 
 		// Store the full grid-allocated dimensions so that Part.relayout() works correctly.
 		super.layout(width, height, top, left);
+	}
+
+	/** Re-run layout using the last known part dimensions (tab strip height/visibility changes). */
+	private _relayoutFromLast(): void {
+		if (this._lastLayout) {
+			this.layout(this._lastLayout.width, this._lastLayout.height, this._lastLayout.top, this._lastLayout.left);
+		}
 	}
 
 	override dispose(): void {

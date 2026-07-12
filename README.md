@@ -35,9 +35,20 @@ The default theme is **Omen Dark** (green accents). User-facing branding says **
 
 ## Featherless.ai setup
 
-1. Create an API key at [featherless.ai](https://featherless.ai/).
-2. On first launch, paste the key in the welcome prompt (or run **Omen IDE: Configure Featherless API Key**).
-3. Pick **GLM-5.2** (or your preferred Featherless model) in the chat model picker.
+Connect with **OAuth** (recommended) or an **API key**:
+
+1. On first launch, choose **Connect Featherless** → **Sign in with Featherless**, or **Enter API Key**.
+
+   OAuth is brokered by the **OMEN API** (confidential client + `client_secret` stay on the server). The IDE never embeds a Featherless client secret.
+
+   - Default broker: `https://api.omen.foundation`
+   - Local backend: launch with `OMEN_OAUTH_BROKER_BASE_URL=http://localhost:3001`
+   - IDE loopback (after broker completes): `http://localhost:33418/callback`
+   - Featherless app redirect URI must be the **backend** callback, e.g. `https://api.omen.foundation/api/featherless/oauth/callback` (or `http://localhost:3001/api/featherless/oauth/callback` for local API)
+
+2. Pick **GLM-5.2** (or your preferred Featherless model) in the chat model picker.
+
+**API key only (no OAuth):** create a key at [featherless.ai/account/api-keys](https://featherless.ai/account/api-keys) and use **Enter API Key** in the connect dialog.
 
 Key settings — open **File → Preferences → Omen IDE Settings** (`Ctrl+,`) or edit `omenide.featherless.*` in VS Code Settings:
 

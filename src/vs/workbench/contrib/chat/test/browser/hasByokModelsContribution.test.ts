@@ -15,11 +15,12 @@ import { TestInstantiationService } from '../../../../../platform/instantiation/
 import { InMemoryStorageService, IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ChatEntitlementContextKeys } from '../../../../services/chat/common/chatEntitlementService.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
-import { TestExtensionService } from '../../../../test/common/workbenchTestServices.js';
+import { IProductService } from '../../../../../platform/product/common/productService.js';
+import { TestExtensionService, TestProductService } from '../../../../test/common/workbenchTestServices.js';
 import { HasByokModelsContribution } from '../../browser/hasByokModelsContribution.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { ChatConfiguration } from '../../common/constants.js';
-import { COPILOT_VENDOR_ID } from '../../common/languageModels.js';
+import { COPILOT_VENDOR_ID, ILanguageModelsService } from '../../common/languageModels.js';
 import { ILanguageModelsConfigurationService, ILanguageModelsProviderGroup } from '../../common/languageModelsConfiguration.js';
 
 suite('HasByokModelsContribution', () => {
@@ -90,6 +91,26 @@ suite('HasByokModelsContribution', () => {
 		readonly clientByokEnabled: IContextKey<boolean>;
 	}
 
+	class FakeLanguageModelsService {
+		_serviceBrand: undefined;
+		private readonly _onDidChangeLanguageModels = new Emitter<string>();
+		readonly onDidChangeLanguageModels = this._onDidChangeLanguageModels.event;
+		private _modelIds: string[] = [];
+
+		setModelIds(modelIds: string[]): void {
+			this._modelIds = modelIds;
+			this._onDidChangeLanguageModels.fire('featherless');
+		}
+
+		getLanguageModelIds(): string[] {
+			return this._modelIds;
+		}
+
+		dispose(): void {
+			this._onDidChangeLanguageModels.dispose();
+		}
+	}
+
 	function createScenario(store: DisposableStore, options: IScenarioOptions = {}): IScenario {
 		const configurationService = new TestConfigurationService();
 		configurationService.setUserConfiguration(ChatConfiguration.AIDisabled, options.configuration?.aiDisabled ?? false);
@@ -112,12 +133,26 @@ suite('HasByokModelsContribution', () => {
 			(configService as unknown as { _groups: readonly FakeProviderGroup[] })._groups = options.groups;
 		}
 
+		const languageModelsService = new FakeLanguageModelsService();
+		store.add({ dispose: () => languageModelsService.dispose() });
+
 		const instantiation = store.add(new TestInstantiationService());
 		instantiation.stub(IStorageService, storage);
 		instantiation.stub(IExtensionService, new TestExtensionService());
 		instantiation.stub(IContextKeyService, contextKeyService);
 		instantiation.stub(IConfigurationService, configurationService);
 		instantiation.stub(ILanguageModelsConfigurationService, configService as unknown as ILanguageModelsConfigurationService);
+		instantiation.stub(ILanguageModelsService, languageModelsService as unknown as ILanguageModelsService);
+		instantiation.stub(IProductService, {
+			...TestProductService,
+			defaultChatAgent: TestProductService.defaultChatAgent ? {
+				...TestProductService.defaultChatAgent,
+				provider: {
+					...TestProductService.defaultChatAgent.provider,
+					default: { ...TestProductService.defaultChatAgent.provider.default, id: 'copilot', name: 'Copilot' },
+				},
+			} : undefined,
+		});
 
 		const hasByokModels = ChatEntitlementContextKeys.hasByokModels.bindTo(contextKeyService);
 		store.add(instantiation.createInstance(HasByokModelsContribution));

@@ -27,7 +27,7 @@ import { IWorkbenchLayoutService, Parts } from '../../../../workbench/services/l
 import { getQuickNavigateHandler, inQuickPickContext } from '../../../../workbench/browser/quickaccess.js';
 import { Menus } from '../../../browser/menus.js';
 import { SessionsCategories } from '../../../common/categories.js';
-import { CanGoBackContext, CanGoForwardContext, SessionProviderIdContext, MultipleSessionsVisibleContext, SessionIsArchivedContext, SessionIsCreatedContext, SessionIsMaximizedContext, SessionIsStickyContext, SessionsFocusContext, SessionSupportsMultipleChatsContext, SessionsWelcomeVisibleContext, SessionIdContext, SessionHasMultipleCommittedChatsContext, SessionShouldShowChatTabsContext, SessionHasMultipleOpenChatsContext, SessionsPickerVisibleContext, SessionActiveChatIsClosableContext, SessionActiveChatIsDeletableContext, SessionChatsPickerVisibleContext, SessionActiveChatHasSubagentsContext } from '../../../common/contextkeys.js';
+import { CanGoBackContext, CanGoForwardContext, SessionProviderIdContext, MultipleSessionsVisibleContext, MultipleSessionTabsVisibleContext, SessionIsArchivedContext, SessionIsCreatedContext, SessionIsMaximizedContext, SessionIsStickyContext, SessionsFocusContext, SessionSupportsMultipleChatsContext, SessionsWelcomeVisibleContext, SessionIdContext, SessionHasMultipleCommittedChatsContext, SessionShouldShowChatTabsContext, SessionHasMultipleOpenChatsContext, SessionsPickerVisibleContext, SessionActiveChatIsClosableContext, SessionActiveChatIsDeletableContext, SessionChatsPickerVisibleContext, SessionActiveChatHasSubagentsContext } from '../../../common/contextkeys.js';
 import { ANY_AGENT_HOST_PROVIDER_RE } from '../../../common/agentHostSessionsProvider.js';
 import { IActiveSession, ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
@@ -1128,14 +1128,18 @@ registerAction2(class CloseSessionAction extends Action2 {
 			icon: Codicon.close,
 			menu: [{
 				id: Menus.SessionBarToolbar,
-				when: ContextKeyExpr.or(SessionIsCreatedContext, MultipleSessionsVisibleContext),
+				when: ContextKeyExpr.or(SessionIsCreatedContext, MultipleSessionsVisibleContext, MultipleSessionTabsVisibleContext),
 				group: '1_session',
 				order: 30,
 			}, {
 				id: Menus.SessionHeaderContext,
-				when: ContextKeyExpr.or(SessionIsCreatedContext, MultipleSessionsVisibleContext),
+				when: ContextKeyExpr.or(SessionIsCreatedContext, MultipleSessionsVisibleContext, MultipleSessionTabsVisibleContext),
 				group: '1_view',
 				order: 2,
+			}, {
+				id: Menus.SessionTab,
+				group: 'navigation',
+				order: 1,
 			}],
 		});
 	}
@@ -1146,6 +1150,67 @@ registerAction2(class CloseSessionAction extends Action2 {
 
 		sessionsService.closeSession(session);
 		sessionsPartService.focusSession(sessionsService.activeSession.get());
+	}
+});
+
+function navigateSessionTab(accessor: ServicesAccessor, direction: 'next' | 'previous'): void {
+	const sessionsService = accessor.get(ISessionsService);
+	const sessionsPartService = accessor.get(ISessionsPartService);
+	const tabs = sessionsService.visibleSessions.get();
+	if (tabs.length < 2) {
+		return;
+	}
+	const active = sessionsService.activeSession.get();
+	const currentIndex = tabs.findIndex(s => s?.sessionId === active?.sessionId);
+	const from = currentIndex === -1 ? 0 : currentIndex;
+	const delta = direction === 'next' ? 1 : -1;
+	const target = tabs[(from + delta + tabs.length) % tabs.length];
+	if (target) {
+		sessionsService.setActive(target);
+		sessionsPartService.focusSession(target);
+	} else {
+		sessionsService.openNewSession();
+		sessionsPartService.focusSession(sessionsService.activeSession.get());
+	}
+}
+
+registerAction2(class NavigateNextSessionTabAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.sessionCompositeBar.navigateNextTab',
+			title: localize2('navigateNextSessionTab', "Go to Next Session Tab"),
+			f1: true,
+			category: SessionsCategories.Sessions,
+			precondition: MultipleSessionTabsVisibleContext,
+			keybinding: {
+				weight: KeybindingWeight.SessionsContrib,
+				when: ContextKeyExpr.and(IsSessionsWindowContext, EditorAreaFocusContext.toNegated(), MultipleSessionTabsVisibleContext, SessionHasMultipleOpenChatsContext.toNegated()),
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.BracketRight,
+			},
+		});
+	}
+	override run(accessor: ServicesAccessor): void {
+		navigateSessionTab(accessor, 'next');
+	}
+});
+
+registerAction2(class NavigatePreviousSessionTabAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.sessionCompositeBar.navigatePreviousTab',
+			title: localize2('navigatePreviousSessionTab', "Go to Previous Session Tab"),
+			f1: true,
+			category: SessionsCategories.Sessions,
+			precondition: MultipleSessionTabsVisibleContext,
+			keybinding: {
+				weight: KeybindingWeight.SessionsContrib,
+				when: ContextKeyExpr.and(IsSessionsWindowContext, EditorAreaFocusContext.toNegated(), MultipleSessionTabsVisibleContext, SessionHasMultipleOpenChatsContext.toNegated()),
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.BracketLeft,
+			},
+		});
+	}
+	override run(accessor: ServicesAccessor): void {
+		navigateSessionTab(accessor, 'previous');
 	}
 });
 

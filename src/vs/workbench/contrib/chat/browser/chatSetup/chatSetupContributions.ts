@@ -52,13 +52,14 @@ import { IExtension, IExtensionsWorkbenchService } from '../../../extensions/com
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../common/constants.js';
+import { ILanguageModelsService } from '../../common/languageModels.js';
 import { CHAT_CATEGORY, CHAT_SETUP_ACTION_ID, CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../actions/chatActions.js';
 import { ChatViewContainerId, IChatWidget, IChatWidgetService } from '../chat.js';
 import { ChatInputNotificationSeverity, IChatInputNotificationService } from '../widget/input/chatInputNotificationService.js';
 import { chatViewsWelcomeRegistry } from '../viewsWelcome/chatViewsWelcome.js';
 import { buildUpgradeUrlWithRedirect, ChatSetupAnonymous, ChatSetupStrategy, refreshTokens } from './chatSetup.js';
 import { ensureFeatherlessChatExtensionReady } from '../../common/featherlessSetup.js';
-import { FEATHERLESS_CONFIGURE_API_KEY_COMMAND, FEATHERLESS_EXTENSION_CONFIGURE_KEY_COMMAND } from '../../../../services/chat/common/featherless.js';
+import { FEATHERLESS_CONFIGURE_API_KEY_COMMAND, FEATHERLESS_EXTENSION_CONFIGURE_KEY_COMMAND, FEATHERLESS_EXTENSION_SIGN_IN_COMMAND, FEATHERLESS_SIGN_IN_COMMAND } from '../../../../services/chat/common/featherless.js';
 import { ChatSetupController } from './chatSetupController.js';
 import { GrowthSessionController, registerGrowthSession } from './chatSetupGrowthSession.js';
 import { AICodeActionsHelper, AINewSymbolNamesProvider, ChatCodeActionsProvider, SetupAgent } from './chatSetupProviders.js';
@@ -347,7 +348,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 			constructor() {
 				super({
 					id: FEATHERLESS_CONFIGURE_API_KEY_COMMAND,
-					title: localize2('configureFeatherlessApiKey', "Configure Featherless API Key"),
+					title: localize2('configureFeatherlessApiKey', "Connect Featherless"),
 				});
 			}
 
@@ -358,6 +359,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 				const chatEntitlementService = accessor.get(IChatEntitlementService);
 				const productService = accessor.get(IProductService);
 				const logService = accessor.get(ILogService);
+				const languageModelsService = accessor.get(ILanguageModelsService);
 
 				await ensureFeatherlessChatExtensionReady(
 					extensionsWorkbenchService,
@@ -365,12 +367,50 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 					chatEntitlementService,
 					productService,
 					logService,
+					commandService,
+					languageModelsService,
 				);
 
 				try {
 					await commandService.executeCommand(FEATHERLESS_EXTENSION_CONFIGURE_KEY_COMMAND);
 				} catch (err) {
 					logService.warn(`[featherless setup] configure API key failed: ${err instanceof Error ? err.message : String(err)}`);
+				}
+			}
+		}
+
+		class SignInFeatherlessAction extends Action2 {
+
+			constructor() {
+				super({
+					id: FEATHERLESS_SIGN_IN_COMMAND,
+					title: localize2('signInFeatherless', "Sign in to Featherless"),
+				});
+			}
+
+			override async run(accessor: ServicesAccessor): Promise<void> {
+				const commandService = accessor.get(ICommandService);
+				const extensionsWorkbenchService = accessor.get(IExtensionsWorkbenchService);
+				const extensionService = accessor.get(IExtensionService);
+				const chatEntitlementService = accessor.get(IChatEntitlementService);
+				const productService = accessor.get(IProductService);
+				const logService = accessor.get(ILogService);
+				const languageModelsService = accessor.get(ILanguageModelsService);
+
+				await ensureFeatherlessChatExtensionReady(
+					extensionsWorkbenchService,
+					extensionService,
+					chatEntitlementService,
+					productService,
+					logService,
+					commandService,
+					languageModelsService,
+				);
+
+				try {
+					await commandService.executeCommand(FEATHERLESS_EXTENSION_SIGN_IN_COMMAND);
+				} catch (err) {
+					logService.warn(`[featherless setup] OAuth sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
 				}
 			}
 		}
@@ -597,6 +637,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 		registerAction2(ToggleSignInTitleBarAction);
 		registerAction2(ChatSetupTriggerAnonymousWithoutDialogAction);
 		registerAction2(ConfigureFeatherlessApiKeyAction);
+		registerAction2(SignInFeatherlessAction);
 		registerAction2(ChatSetupTriggerSupportAnonymousAction);
 		registerAction2(UpgradePlanAction);
 		registerAction2(ManageAdditionalSpendAction);

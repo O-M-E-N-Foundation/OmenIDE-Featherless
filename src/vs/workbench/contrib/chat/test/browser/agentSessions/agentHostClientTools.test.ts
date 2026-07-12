@@ -27,6 +27,7 @@ import { IChatProgress, IChatService, IChatToolInvocation, ToolConfirmKind } fro
 import { IChatEditingService } from '../../../common/editing/chatEditingService.js';
 import { IChatResponseFileChangesService } from '../../../browser/chatResponseFileChangesService.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
+import { IOmenImageAnalysisService } from '../../../common/omenImageAnalysis.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
@@ -454,6 +455,11 @@ suite('AgentHostClientTools', () => {
 			instantiationService.stub(ILanguageModelsService, {
 				deltaLanguageModelChatProviderDescriptors: () => { },
 				registerLanguageModelProvider: () => toDisposable(() => { }),
+			});
+			instantiationService.stub(IOmenImageAnalysisService, {
+				_serviceBrand: undefined,
+				isEnabled: () => false,
+				analyzeImage: async () => undefined,
 			});
 			instantiationService.stub(IConfigurationService, configService);
 			instantiationService.stub(IOutputService, { getChannel: () => undefined });

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Delayer, disposableTimeout } from '../../../../../../base/common/async.js';
-import { encodeBase64, VSBuffer } from '../../../../../../base/common/buffer.js';
+import { encodeBase64, decodeBase64, VSBuffer } from '../../../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { isCancellationError } from '../../../../../../base/common/errors.js';
 import { Emitter } from '../../../../../../base/common/event.js';
@@ -69,6 +69,7 @@ import { ChatMode } from '../../../common/chatModes.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../../common/constants.js';
 import { IChatEditingService } from '../../../common/editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../../common/languageModels.js';
+import { IOmenImageAnalysisService } from '../../../common/omenImageAnalysis.js';
 import { type IChatModel, type IChatModelInputState, type IChatRequestVariableData, type ISerializableChatModelInputState } from '../../../common/model/chatModel.js';
 import { ChatElicitationRequestPart } from '../../../common/model/chatProgressTypes/chatElicitationRequestPart.js';
 import { ChatPlanReviewData } from '../../../common/model/chatProgressTypes/chatPlanReviewData.js';
@@ -656,6 +657,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		@ILanguageModelToolsService private readonly _toolsService: ILanguageModelToolsService,
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
+		@IOmenImageAnalysisService private readonly _omenImageAnalysisService: IOmenImageAnalysisService,
 		@IOpenerService private readonly _openerService: IOpenerService,
 		@IAgentHostActiveClientService private readonly _activeClientService: IAgentHostActiveClientService,
 		@IChatEntitlementService private readonly _chatEntitlementService: IChatEntitlementService,
@@ -1575,7 +1577,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		this._clientDispatchedTurnIds.add(turnId);
 		const chatURI = this._getChatURI(request.sessionResource);
 		const turnChannel = chatURI;
-		const messageAttachments = await this._convertVariablesToAttachments(request);
+		const messageAttachments = await this._convertVariablesToAttachments(request, cancellationToken);
 		if (cancellationToken.isCancellationRequested) {
 			return;
 		}
@@ -3852,14 +3854,83 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		return !!await this._workspaceTrustRequestService.requestResourcesTrust({ uri: workingDirectory, message });
 	}
 
-	private _convertVariablesToAttachments(request: IChatAgentRequest): MessageAttachment[] {
+	private async _convertVariablesToAttachments(request: IChatAgentRequest, token: CancellationToken = CancellationToken.None): Promise<MessageAttachment[]> {
 		const attachments = this._variableEntriesToAttachments(request.variables.variables, request.sessionResource, request.message);
 		const explicitCount = attachments.length;
 		this._appendActiveEditorAttachments(attachments, request);
 		if (attachments.length !== explicitCount) {
 			this._logService.trace(`[AgentHost] Forwarded ${attachments.length - explicitCount} active editor attachment(s); ${attachments.length} total`);
 		}
+		await this._describeImagesForNonVisionModel(attachments, request, token);
 		return attachments;
+	}
+
+	/**
+	 * When the selected chat model cannot accept images, replace image
+	 * EmbeddedResource attachments with Simple text descriptions from the
+	 * configured Featherless vision sidecar (e.g. Qwen3.6-27B).
+	 */
+	private async _describeImagesForNonVisionModel(attachments: MessageAttachment[], request: IChatAgentRequest, token: CancellationToken): Promise<void> {
+		if (!this._omenImageAnalysisService.isEnabled() || token.isCancellationRequested) {
+			return;
+		}
+
+		const modelId = request.userSelectedModelId;
+		const metadata = modelId ? this._languageModelsService.lookupLanguageModel(modelId) : undefined;
+		// Keep native multimodal path when vision is supported or unknown (Auto).
+		if (!metadata || metadata.capabilities?.vision !== false) {
+			return;
+		}
+
+		for (let i = 0; i < attachments.length; i++) {
+			if (token.isCancellationRequested) {
+				return;
+			}
+			const attachment = attachments[i];
+			if (attachment.type !== MessageAttachmentKind.EmbeddedResource) {
+				continue;
+			}
+			if (attachment.displayKind !== 'image' && !attachment.contentType.startsWith('image/')) {
+				continue;
+			}
+
+			try {
+				const imageData = decodeBase64(attachment.data).buffer;
+				const description = await this._omenImageAnalysisService.analyzeImage({
+					imageData,
+					mimeType: attachment.contentType || 'image/png',
+					userPrompt: request.message,
+					imageLabel: attachment.label,
+				}, token);
+
+				if (description) {
+					attachments[i] = this._toSimpleAttachment(
+						attachment.label,
+						`Image description (analyzed for relevance to the user's request):\n${description}`,
+						attachment._meta,
+						'image-description',
+						attachment.range,
+					);
+				} else {
+					attachments[i] = this._toSimpleAttachment(
+						attachment.label,
+						`[Image "${attachment.label}" was attached but could not be analyzed for ${metadata.name ?? 'this model'}.]`,
+						attachment._meta,
+						'image-description',
+						attachment.range,
+					);
+				}
+			} catch (err) {
+				this._logService.warn(`[AgentHost] Image sidecar analysis failed: ${err}`);
+				attachments[i] = this._toSimpleAttachment(
+					attachment.label,
+					`[Image "${attachment.label}" was attached but could not be analyzed for ${metadata.name ?? 'this model'}.]`,
+					attachment._meta,
+					'image-description',
+					attachment.range,
+				);
+			}
+		}
 	}
 
 	/**

@@ -50,8 +50,8 @@ export class SessionsParts extends Disposable implements ISessionsPartService {
 		this._mainPart = this._register(instantiationService.createInstance(isPhoneLayout ? MobileSessionsPart : SessionsPart));
 	}
 
-	updateVisibleSessions(visible: readonly (IActiveSession | undefined)[], active: IActiveSession | undefined): void {
-		this._mainPart.updateVisibleSessions(visible, active);
+	updateVisibleSessions(visible: readonly (IActiveSession | undefined)[], active: IActiveSession | undefined, options?: { splitView?: boolean }): void {
+		this._mainPart.updateVisibleSessions(visible, active, options);
 	}
 
 	toggleMaximizeSession(session: IActiveSession | undefined): void {

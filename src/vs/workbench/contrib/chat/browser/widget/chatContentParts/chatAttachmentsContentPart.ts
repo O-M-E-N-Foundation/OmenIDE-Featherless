@@ -14,6 +14,8 @@ import { ResourceLabels } from '../../../../../browser/labels.js';
 import { getImageAttachmentLimit, IChatRequestVariableEntry, isAgentHostCompletionVariableEntry, isBrowserViewVariableEntry, isElementVariableEntry, isImageVariableEntry, isNotebookOutputVariableEntry, isPasteVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isSCMHistoryItemChangeRangeVariableEntry, isSCMHistoryItemChangeVariableEntry, isSCMHistoryItemVariableEntry, isTerminalVariableEntry, isWorkspaceVariableEntry, OmittedState } from '../../../common/attachments/chatVariableEntries.js';
 import { ChatResponseReferencePartStatusKind, IChatContentReference } from '../../../common/chatService/chatService.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, isAutoLanguageModel } from '../../../common/languageModels.js';
+import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
+import { isOmenImageSidecarConfigured, OmenIDEConfiguration } from '../../omenSettings/omenSettings.js';
 import { DefaultChatAttachmentWidget, ElementChatAttachmentWidget, FileAttachmentWidget, ImageAttachmentWidget, BrowserViewAttachmentWidget, NotebookCellOutputChatAttachmentWidget, PasteAttachmentWidget, PromptFileAttachmentWidget, PromptTextAttachmentWidget, SCMHistoryItemAttachmentWidget, SCMHistoryItemChangeAttachmentWidget, SCMHistoryItemChangeRangeAttachmentWidget, TerminalCommandAttachmentWidget, ToolSetOrToolItemAttachmentWidget } from '../../attachments/chatAttachmentWidgets.js';
 import { IChatAttachmentWidgetRegistry } from '../../attachments/chatAttachmentWidgetRegistry.js';
 
@@ -47,6 +49,7 @@ export class ChatAttachmentsContentPart extends Disposable {
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IChatAttachmentWidgetRegistry private readonly chatAttachmentWidgetRegistry: IChatAttachmentWidgetRegistry,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super();
 		this._variables = options.variables;
@@ -106,6 +109,9 @@ export class ChatAttachmentsContentPart extends Disposable {
 	}
 
 	private currentModelDoesNotSupportImages(): boolean {
+		if (isOmenImageSidecarConfigured(this.configurationService.getValue<string>(OmenIDEConfiguration.visionModel))) {
+			return false;
+		}
 		const model = this.getCurrentLanguageModel();
 		return !!model && !isAutoLanguageModel(model) && model.metadata.capabilities?.vision === false;
 	}

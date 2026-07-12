@@ -400,16 +400,14 @@ export class VisibleSessions extends Disposable {
 	/**
 	 * Set the active session, updating the visibility model accordingly.
 	 *
-	 * - Passing `undefined` places (or keeps) the single empty slot in the
-	 *   grid and makes it active. The empty slot is always non-sticky.
+	 * Cursor-style tab semantics:
+	 * - Passing `undefined` places (or activates) the empty/new-session slot.
+	 *   The empty slot is appended when missing (other tabs stay open).
 	 * - If the session is already in the grid, its slot is preserved and only
 	 *   the active observable is updated.
-	 * - Otherwise the session is placed as non-sticky:
-	 *   - If the active slot is non-sticky, the new one replaces it in
-	 *     place.
-	 *   - Else if a non-sticky slot exists, the most-recently opened
-	 *     non-sticky is replaced.
-	 *   - Else the session is appended at the end of the grid.
+	 * - Otherwise the session opens as a new tab:
+	 *   - If the active slot is the empty placeholder, that slot is filled.
+	 *   - Else the session is appended at the end of the tab strip.
 	 *
 	 * Returns the wrapper for the active session, or `undefined` when the
 	 * active slot is the empty slot.
@@ -419,26 +417,15 @@ export class VisibleSessions extends Disposable {
 
 		if (!this._visibleList.includes(targetId)) {
 			const activeSlot = this._currentActiveSlot();
-			const activeIsNonSticky = activeSlot !== NO_RECENT && !this._isStickySlot(activeSlot);
 
-			let replaceSlot: string | undefined | typeof NO_RECENT;
-			if (activeIsNonSticky) {
-				replaceSlot = activeSlot;
-			} else if (this._mostRecentNonStickySlot !== NO_RECENT
-				&& this._visibleList.includes(this._mostRecentNonStickySlot)
-				&& !this._isStickySlot(this._mostRecentNonStickySlot)) {
-				replaceSlot = this._mostRecentNonStickySlot;
+			if (targetId !== undefined && activeSlot === undefined && this._visibleList.includes(undefined)) {
+				// Fill the active New Session placeholder with the opened session.
+				const emptyIdx = this._visibleList.indexOf(undefined);
+				this._visibleList.splice(emptyIdx, 1, targetId);
+			} else if (targetId === undefined && this._visibleList.includes(undefined)) {
+				// Empty slot already present — activation below is enough.
 			} else {
-				replaceSlot = this._findLastNonSticky();
-			}
-
-			if (replaceSlot !== NO_RECENT) {
-				const idx = this._visibleList.indexOf(replaceSlot);
-				this._visibleList.splice(idx, 1, targetId);
-				if (replaceSlot !== undefined) {
-					this._wrappers.deleteAndDispose(replaceSlot);
-				}
-			} else {
+				// Open as a new tab; keep existing tabs.
 				this._visibleList.push(targetId);
 			}
 			this._mostRecentNonStickySlot = targetId;

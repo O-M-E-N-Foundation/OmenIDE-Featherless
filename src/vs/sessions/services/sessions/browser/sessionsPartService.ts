@@ -28,8 +28,11 @@ export interface ISessionsPartService {
 	 * sessions (and active session). Called by the view service whenever the
 	 * visible sessions or active session change. The part is a passive renderer:
 	 * it does not observe the model itself.
+	 *
+	 * When `options.splitView` is true, multiple visible sessions render
+	 * side-by-side; otherwise the part uses Cursor-style tabs with a single pane.
 	 */
-	updateVisibleSessions(visible: readonly (IActiveSession | undefined)[], active: IActiveSession | undefined): void;
+	updateVisibleSessions(visible: readonly (IActiveSession | undefined)[], active: IActiveSession | undefined, options?: { splitView?: boolean }): void;
 
 	/**
 	 * Fires with the session id of a grid slot that received keyboard focus. The

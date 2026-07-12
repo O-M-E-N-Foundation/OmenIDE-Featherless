@@ -41,6 +41,16 @@ function resolveSelectedOption(options: ConfirmationOption[] | undefined, id: st
 	return options.find(o => o.id === id);
 }
 
+/** Prefer the fullest tool input when streaming deltas carry more than toolCallReady. */
+function resolveToolInputOnReady(tc: ToolCallState, actionToolInput: string | undefined): string | undefined {
+	const partial = tc.status === ToolCallStatus.Streaming ? tc.partialInput?.trim() : undefined;
+	const ready = actionToolInput?.trim();
+	if (partial && ready) {
+		return partial.length > ready.length ? partial : ready;
+	}
+	return ready || partial;
+}
+
 /** Returns `true` if the active turn has any tool call awaiting user confirmation. */
 function hasPendingToolCallConfirmation(state: ChatState): boolean {
 	if (!state.activeTurn) {
@@ -363,12 +373,13 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 					return tc;
 				}
 				const base = tcBaseWithMeta(tc, action._meta);
+				const toolInput = resolveToolInputOnReady(tc, action.toolInput);
 				if (action.confirmed) {
 					return {
 						status: ToolCallStatus.Running,
 						...base,
 						invocationMessage: action.invocationMessage,
-						toolInput: action.toolInput,
+						toolInput,
 						confirmed: action.confirmed,
 					};
 				}
@@ -376,7 +387,7 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 					status: ToolCallStatus.PendingConfirmation,
 					...base,
 					invocationMessage: action.invocationMessage,
-					toolInput: action.toolInput,
+					toolInput,
 					confirmationTitle: action.confirmationTitle,
 					edits: action.edits,
 					editable: action.editable,

@@ -39,7 +39,8 @@ export class PlanBuildService extends Disposable implements IPlanBuildService {
 	readonly onDidBuildPlan = this._onDidBuildPlan.event;
 
 	private _activeNotificationHandle: INotificationHandle | undefined;
-	private _activeTimeout: ReturnType<typeof mainWindow.setTimeout> | undefined;
+	private _activeInterval: ReturnType<Window['setInterval']> | undefined;
+	private _activeTimeout: ReturnType<Window['setTimeout']> | undefined;
 
 	constructor(
 		@IWorkspacePlanService private readonly workspacePlanService: IWorkspacePlanService,
@@ -136,14 +137,17 @@ export class PlanBuildService extends Disposable implements IPlanBuildService {
 				remaining -= 1;
 				if (remaining <= 0) {
 					mainWindow.clearInterval(interval);
+					this._activeInterval = undefined;
 					finish(true);
 					handle.close();
 					return;
 				}
 				handle.updateMessage(updateMessage());
 			}, 1000);
+			this._activeInterval = interval;
 			this._activeTimeout = mainWindow.setTimeout(() => {
 				mainWindow.clearInterval(interval);
+				this._activeInterval = undefined;
 				if (!resolved) {
 					handle.close();
 					finish(true);
@@ -153,6 +157,10 @@ export class PlanBuildService extends Disposable implements IPlanBuildService {
 	}
 
 	private clearActivePrompt(): void {
+		if (this._activeInterval) {
+			mainWindow.clearInterval(this._activeInterval);
+			this._activeInterval = undefined;
+		}
 		if (this._activeTimeout) {
 			mainWindow.clearTimeout(this._activeTimeout);
 			this._activeTimeout = undefined;

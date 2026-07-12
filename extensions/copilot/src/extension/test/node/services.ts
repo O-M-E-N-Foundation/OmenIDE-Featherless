@@ -17,6 +17,8 @@ import { DiffServiceImpl } from '../../../platform/diff/node/diffServiceImpl';
 import { EmbeddingType, IEmbeddingsComputer } from '../../../platform/embeddings/common/embeddingsComputer';
 import { BYOKStorageService, IBYOKStorageService } from '../../byok/vscode-node/byokStorageService';
 import { OmenIDEEmbeddingsComputer } from '../../omenide/node/omenideEmbeddingsComputer';
+import { FeatherlessImageAnalysisService } from '../../omenide/node/featherlessImageAnalysisService';
+import { IOmenImageAnalysisService } from '../../omenide/common/imageAnalysisService';
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
 import { IAutomodeService } from '../../../platform/endpoint/node/automodeService';
 import { IModelConfig } from '../../../platform/endpoint/test/node/openaiCompatibleEndpoint';
@@ -152,6 +154,7 @@ export function createExtensionUnitTestingServices(disposables: Pick<DisposableS
 	testingServiceCollection.define(IToolEmbeddingsComputer, new SyncDescriptor(TestToolEmbeddingsComputer));
 	testingServiceCollection.define(IBYOKStorageService, new SyncDescriptor(BYOKStorageService));
 	testingServiceCollection.define(IEmbeddingsComputer, new SyncDescriptor(OmenIDEEmbeddingsComputer));
+	testingServiceCollection.define(IOmenImageAnalysisService, new SyncDescriptor(FeatherlessImageAnalysisService));
 	testingServiceCollection.define(ITodoListContextProvider, new SyncDescriptor(TodoListContextProvider));
 	testingServiceCollection.define(ILanguageModelServer, new SyncDescriptor(MockLanguageModelServer));
 	testingServiceCollection.define(IEditToolLearningService, new SyncDescriptor(EditToolLearningService));
