@@ -24,6 +24,12 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 	await gh.removeIssueLabel(env, issue.number, 'ready-for-ai');
 	await gh.removeIssueLabel(env, issue.number, 'needs-human');
 
+	const comments = await gh.listIssueComments(env, issue.number);
+	const recentComments = comments
+		.slice(-8)
+		.map(c => `### Comment by ${c.user.login} (${c.created_at})\n${c.body.slice(0, 4000)}`)
+		.join('\n\n');
+
 	const tools = [
 		...baseTools(),
 		finishTool('finish_implement', 'Finish implementation', {
@@ -50,17 +56,27 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 	const ctx = await runAgentLoop({
 		env,
 		systemPromptName: 'implement',
+		requireFinish: true,
 		userPrompt: [
 			`Implement GitHub issue #${issue.number}.`,
 			`Suggested branch name: ${branchHint}`,
 			`Title: ${issue.title}`,
 			`URL: ${issue.html_url}`,
+			`maxSteps budget: ${env.maxSteps} — prioritize write_file/edit_file early; do not burn the budget exploring.`,
 			'',
+			'## Issue body',
 			issue.body || '(no body)',
 			'',
-			'Create commits on the suggested branch, push with gh/git, and open a PR labeled ai-authored that Fixes this issue.',
+			'## Recent issue comments (follow the latest implementation plan if present)',
+			recentComments || '(no comments)',
 			'',
-			'IMPORTANT: ready-for-ai already approved shipping. Choose sensible defaults for unspecified UX/timeout details and implement. Do not escalate for "architectural complexity".',
+			'## Required outcome',
+			'1. Create/edit implementation files (write_file/edit_file) within the first ~15 tool steps.',
+			'2. git checkout -b, commit, push.',
+			'3. Open PR labeled ai-authored with Fixes #' + issue.number + ' via gh_create_pr.',
+			'4. Call finish_implement(status=ok, pr_url=...).',
+			'',
+			'ready-for-ai already approved shipping. Choose sensible defaults. Do not escalate for complexity.',
 		].join('\n'),
 		tools,
 	});
@@ -72,9 +88,17 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 		await gh.commentOnIssue(
 			env,
 			issue.number,
-			formatRejectedNeedsHumanComment('Agent exited without finish_implement.'),
+			[
+				'### Omen implement — failed (no finish)',
+				'',
+				'The agent exhausted its step budget or stopped without calling `finish_implement` and **did not open a PR**.',
+				'',
+				'This is an agent-runner failure, not a missing human decision.',
+				'',
+				'**What happens next:** maintainers can re-add `ready-for-ai` to retry after agent fixes land on `main`.',
+			].join('\n'),
 		);
-		return;
+		throw new Error('Implement agent exited without finish_implement');
 	}
 
 	if (finished.status === 'needs-human') {
@@ -84,8 +108,7 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 				issue.number,
 				formatRejectedNeedsHumanComment(String(finished.message || finished.blocker || '')),
 			);
-			// Do not apply needs-human — leave the issue easy to re-queue with ready-for-ai.
-			return;
+			throw new Error('Implement agent returned non-actionable needs-human');
 		}
 
 		await gh.setIssueLabels(env, issue.number, ['needs-human']);
@@ -97,10 +120,25 @@ export async function runImplement(env: AgentEnv): Promise<void> {
 		return;
 	}
 
-	const prUrl = finished.pr_url ? String(finished.pr_url) : '';
+	if (!finished.pr_url) {
+		await gh.commentOnIssue(
+			env,
+			issue.number,
+			[
+				'### Omen implement — incomplete',
+				'',
+				String(finished.message || 'Agent reported ok but did not provide pr_url.'),
+				'',
+				'Re-add `ready-for-ai` to retry.',
+			].join('\n'),
+		);
+		throw new Error('Implement agent finished ok without pr_url');
+	}
+
+	const prUrl = String(finished.pr_url);
 	await gh.commentOnIssue(
 		env,
 		issue.number,
-		`### Omen implement\n\n${String(finished.message || 'Implementation PR opened.')}${prUrl ? `\n\nPR: ${prUrl}` : ''}\n\nCodeRabbit + security CI will run next; merge is automatic when clean. QA is post-merge.`,
+		`### Omen implement\n\n${String(finished.message || 'Implementation PR opened.')}\n\nPR: ${prUrl}\n\nCodeRabbit + security CI will run next; merge is automatic when clean. QA is post-merge.`,
 	);
 }

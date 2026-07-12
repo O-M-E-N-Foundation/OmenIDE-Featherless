@@ -86,6 +86,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 	const ctx = await runAgentLoop({
 		env,
 		systemPromptName: 'address-review',
+		requireFinish: true,
 		userPrompt: [
 			`PR #${pr.number}: ${pr.title}`,
 			`Branch: ${pr.head.ref}`,

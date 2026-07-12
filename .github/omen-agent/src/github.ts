@@ -37,6 +37,13 @@ export async function getIssue(env: AgentEnv, issueNumber: number) {
 	}>(env, `/repos/${env.owner}/${env.repo}/issues/${issueNumber}`);
 }
 
+export async function listIssueComments(env: AgentEnv, issueNumber: number) {
+	return gh<Array<{ user: { login: string }; body: string; created_at: string }>>(
+		env,
+		`/repos/${env.owner}/${env.repo}/issues/${issueNumber}/comments?per_page=50`,
+	);
+}
+
 export async function commentOnIssue(env: AgentEnv, issueNumber: number, body: string) {
 	return gh(env, `/repos/${env.owner}/${env.repo}/issues/${issueNumber}/comments`, {
 		method: 'POST',

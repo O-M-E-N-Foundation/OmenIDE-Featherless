@@ -88,4 +88,5 @@ jobs:
           GITHUB_WORKSPACE: ${{ github.workspace }}
           OMEN_ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
           OMEN_AGENT_MODEL: ${{ vars.OMEN_AGENT_MODEL }}
+          OMEN_MAX_STEPS: ${{ vars.OMEN_MAX_STEPS || 100 }}
         run: node --experimental-strip-types src/index.ts implement

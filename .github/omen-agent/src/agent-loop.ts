@@ -7,11 +7,16 @@ import type { AgentEnv } from './config.ts';
 import { chatCompletion, readPrompt, type ChatMessage, type ToolDefinition } from './featherless.ts';
 import { runTool, type ToolContext } from './tools.ts';
 
+const EXPLORE_TOOLS = new Set(['list_dir', 'read_file', 'run_command']);
+const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'gh_create_pr']);
+
 export async function runAgentLoop(options: {
 	env: AgentEnv;
 	systemPromptName: string;
 	userPrompt: string;
 	tools: ToolDefinition[];
+	/** When true, do not exit on text-only replies; nudge toward tools/finish instead. */
+	requireFinish?: boolean;
 }): Promise<ToolContext> {
 	const ctx: ToolContext = { env: options.env };
 	const messages: ChatMessage[] = [
@@ -19,7 +24,27 @@ export async function runAgentLoop(options: {
 		{ role: 'user', content: options.userPrompt },
 	];
 
+	let exploreStreak = 0;
+	let wroteAnything = false;
+	let emptyReplies = 0;
+
 	for (let step = 0; step < options.env.maxSteps; step++) {
+		const remaining = options.env.maxSteps - step;
+		if (remaining <= 8 && options.requireFinish && !ctx.finished) {
+			messages.push({
+				role: 'user',
+				content: wroteAnything
+					? `Only ${remaining} steps left. Commit, push, open/update the PR with gh_create_pr if needed, then call finish_implement(status=ok, pr_url=...). Do not explore further.`
+					: `Only ${remaining} steps left and you have NOT written files yet. Stop exploring. Immediately write_file/edit_file for the splash contribution, then commit/push/PR, then finish_implement. Prefer implementing over perfect research.`,
+			});
+		} else if (exploreStreak >= 10 && !wroteAnything) {
+			messages.push({
+				role: 'user',
+				content: 'You have explored for many steps without writing code. STOP exploring. Create/edit the implementation files now with write_file/edit_file using the issue plan. Do not run more searches unless a specific path from the plan is missing.',
+			});
+			exploreStreak = 0;
+		}
+
 		const assistant = await chatCompletion(options.env, messages, options.tools);
 		messages.push(assistant);
 
@@ -28,11 +53,28 @@ export async function runAgentLoop(options: {
 			if (assistant.content) {
 				console.log(assistant.content);
 			}
+			emptyReplies++;
+			if (options.requireFinish && emptyReplies < 3 && !ctx.finished) {
+				messages.push({
+					role: 'user',
+					content: 'You replied without tools. Continue by calling tools. You must either write code and finish_implement(status=ok), or finish_implement(status=needs-human) with blocker/questions/unblock_steps.',
+				});
+				continue;
+			}
 			break;
 		}
 
+		emptyReplies = 0;
+		let stepWasExploreOnly = true;
 		for (const call of toolCalls) {
 			console.log(`tool: ${call.function.name}`);
+			if (WRITE_TOOLS.has(call.function.name)) {
+				wroteAnything = true;
+				stepWasExploreOnly = false;
+				exploreStreak = 0;
+			} else if (!EXPLORE_TOOLS.has(call.function.name)) {
+				stepWasExploreOnly = false;
+			}
 			const result = await runTool(ctx, call.function.name, call.function.arguments);
 			messages.push({
 				role: 'tool',
@@ -43,6 +85,9 @@ export async function runAgentLoop(options: {
 			if (ctx.finished) {
 				return ctx;
 			}
+		}
+		if (stepWasExploreOnly) {
+			exploreStreak++;
 		}
 	}
 

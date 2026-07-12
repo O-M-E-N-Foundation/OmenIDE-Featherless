@@ -44,7 +44,7 @@ export function loadEnv(mode: AgentMode): AgentEnv {
 		repo,
 		issueNumber: Number.isFinite(issueNumber) ? issueNumber : undefined,
 		prNumber: Number.isFinite(prNumber) ? prNumber : undefined,
-		maxSteps: Number(process.env.OMEN_MAX_STEPS || 40),
+		maxSteps: Number(process.env.OMEN_MAX_STEPS || (mode === 'implement' ? 100 : mode === 'address-review' ? 60 : 40)),
 		maxReviewRounds: Number(process.env.OMEN_MAX_REVIEW_ROUNDS || 3),
 		sha: process.env.GITHUB_SHA,
 	};
