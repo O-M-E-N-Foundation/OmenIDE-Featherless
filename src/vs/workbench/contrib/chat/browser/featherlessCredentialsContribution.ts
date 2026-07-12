@@ -71,6 +71,9 @@ export class FeatherlessCredentialsContribution extends Disposable implements IW
 			}
 
 			const result = await this._readCredentials();
+			if (this._store.isDisposed || generation !== this._refreshGeneration) {
+				return;
+			}
 			if (result === 'yes') {
 				this._hasFeatherlessCredentials.set(true);
 				return;

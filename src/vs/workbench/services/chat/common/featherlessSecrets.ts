@@ -79,11 +79,15 @@ export async function readFeatherlessCredentialSecrets(secretStorage: ISecretSto
 
 	if (!resolvedApiKey && legacyApi?.trim()) {
 		resolvedApiKey = legacyApi.trim();
-		void secretStorage.set(canonicalApiKey, resolvedApiKey).then(() => secretStorage.delete(legacyApiKey));
+		void secretStorage.set(canonicalApiKey, resolvedApiKey)
+			.then(() => secretStorage.delete(legacyApiKey))
+			.catch(() => { /* best-effort; a future read will retry the migration */ });
 	}
 	if (!resolvedOauth && legacyOAuth?.trim()) {
 		resolvedOauth = legacyOAuth.trim();
-		void secretStorage.set(canonicalOauth, resolvedOauth).then(() => secretStorage.delete(legacyOauth));
+		void secretStorage.set(canonicalOauth, resolvedOauth)
+			.then(() => secretStorage.delete(legacyOauth))
+			.catch(() => { /* best-effort; a future read will retry the migration */ });
 	}
 
 	return { apiKey: resolvedApiKey, oauthToken: resolvedOauth };

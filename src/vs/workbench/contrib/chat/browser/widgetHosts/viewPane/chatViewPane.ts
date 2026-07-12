@@ -904,14 +904,28 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	 * instead of creating another empty session.
 	 */
 	async openNewSessionTab(): Promise<void> {
-		const reusable = this.findReusableEmptySession();
-		if (reusable) {
-			await this.activateOpenTab(reusable);
+		const reusableRef = await this.acquireReusableEmptyOpenTab(CancellationToken.None);
+		if (reusableRef) {
+			const resource = reusableRef.object.sessionResource;
+			reusableRef.dispose();
+			await this.activateOpenTab(resource);
 			return;
 		}
 		await this.clear();
 		// showModel already registered the new session as the active tab
 		this._widget.focusInput();
+	}
+
+	private static readonly MAX_EMPTY_TAB_PROBE = 5;
+
+	/**
+	 * Open tabs whose session type matches the configured default new-chat type.
+	 */
+	private getDefaultTypeTabResources(): URI[] {
+		const defaultType = getDefaultNewChatSessionType(this.configurationService, this.chatSessionsService, this.storageService);
+		return this._openTabs.tabs
+			.filter(tab => getChatSessionType(tab.resource) === defaultType)
+			.map(tab => tab.resource);
 	}
 
 	/**
@@ -928,19 +942,16 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			return current.sessionResource;
 		}
 
-		for (const tab of this._openTabs.tabs) {
-			if (!matchesDefault(tab.resource)) {
-				continue;
-			}
-			const live = this.chatService.getSession(tab.resource);
+		for (const resource of this.getDefaultTypeTabResources()) {
+			const live = this.chatService.getSession(resource);
 			if (live) {
 				if (!live.hasRequests) {
-					return tab.resource;
+					return resource;
 				}
 				continue;
 			}
-			if (isUntitledChatSession(tab.resource)) {
-				return tab.resource;
+			if (isUntitledChatSession(resource)) {
+				return resource;
 			}
 		}
 
@@ -953,7 +964,16 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			this._widget.focusInput();
 			return;
 		}
-		await this.loadSession(resource);
+		const requested = resource;
+		await this.loadSession(requested);
+		const shown = this._widget.viewModel?.sessionResource;
+		if (shown && !isEqual(shown, requested)) {
+			// Empty sessions can be recycled into a new URI on reload.
+			if (this._openTabs.contains(requested)) {
+				this._openTabs.close(requested);
+			}
+			this._openTabs.openOrActivate(shown);
+		}
 		this._widget.focusInput();
 	}
 
@@ -1183,20 +1203,21 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			}
 		}
 
-		const defaultType = getDefaultNewChatSessionType(this.configurationService, this.chatSessionsService, this.storageService);
-		for (const tab of this._openTabs.tabs) {
-			if (getChatSessionType(tab.resource) !== defaultType) {
-				continue;
-			}
-			if (syncHit && isEqual(tab.resource, syncHit)) {
+		let probed = syncHit ? 1 : 0;
+		for (const tabResource of this.getDefaultTypeTabResources()) {
+			if (syncHit && isEqual(tabResource, syncHit)) {
 				continue; // already tried above
 			}
-			const live = this.chatService.getSession(tab.resource);
+			if (probed >= ChatViewPane.MAX_EMPTY_TAB_PROBE) {
+				break;
+			}
+			const live = this.chatService.getSession(tabResource);
 			if (live?.hasRequests) {
 				continue;
 			}
+			probed++;
 			try {
-				const ref = await this.chatService.acquireOrLoadSession(tab.resource, ChatAgentLocation.Chat, token, 'ChatViewPane#acquireReusableEmptyOpenTab');
+				const ref = await this.chatService.acquireOrLoadSession(tabResource, ChatAgentLocation.Chat, token, 'ChatViewPane#acquireReusableEmptyOpenTab');
 				if (token.isCancellationRequested) {
 					ref?.dispose();
 					return undefined;
@@ -1206,7 +1227,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				}
 				ref?.dispose();
 			} catch (error) {
-				this.logService.trace(`[ChatViewPane] Failed to probe open tab ${tab.resource.toString()} for empty reuse`, error);
+				this.logService.trace(`[ChatViewPane] Failed to probe open tab ${tabResource.toString()} for empty reuse`, error);
 			}
 		}
 

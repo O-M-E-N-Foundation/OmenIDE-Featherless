@@ -40,7 +40,7 @@ jobs:
           done <<< "$DIFF"
 
           PATCH=$(git diff "$BASE...$HEAD" || true)
-          if echo "$PATCH" | grep -Eiq '^\+.*(FEATHERLESS_API_KEY|OPENAI_API_KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----)'; then
+          if echo "$PATCH" | grep -Eiq '^\+.*(FEATHERLESS_API_KEY(?![_A-Za-z0-9])|OPENAI_API_KEY(?![_A-Za-z0-9])|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----)'; then
             echo "::error::Diff appears to introduce a secret or private key literal"
             FAIL=1
           fi

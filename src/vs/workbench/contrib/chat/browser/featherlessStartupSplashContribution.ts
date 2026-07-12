@@ -6,7 +6,7 @@
 import './media/featherlessStartupSplash.css';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { DeferredPromise, disposableTimeout, raceTimeout, timeout } from '../../../../base/common/async.js';
-import { $, append, getWindow } from '../../../../base/browser/dom.js';
+import { $, append, addDisposableListener, getWindow } from '../../../../base/browser/dom.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
 import { FileAccess } from '../../../../base/common/network.js';
@@ -132,7 +132,7 @@ export class FeatherlessStartupSplashContribution extends Disposable implements 
 		this._setProgress(8);
 
 		const layout = () => this._layoutSplashChrome();
-		background.addEventListener('load', layout);
+		this._register(addDisposableListener(background, 'load', layout));
 		const ro = new ResizeObserver(layout);
 		ro.observe(overlay);
 		this._register({ dispose: () => ro.disconnect() });

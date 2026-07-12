@@ -396,19 +396,14 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		}
 	}
 
-	private async _readFeatherlessOAuthFromStorage(): Promise<boolean> {
-		const { oauthToken } = await readFeatherlessCredentialSecrets(this.secretStorageService);
-		return !!oauthToken;
-	}
-
-	private async _readFeatherlessApiKeyFromStorage(): Promise<string | undefined> {
-		const { apiKey } = await readFeatherlessCredentialSecrets(this.secretStorageService);
-		return apiKey;
+	private async _readFeatherlessCredentials(): Promise<{ apiKey: string | undefined; oauthToken: string | undefined }> {
+		return readFeatherlessCredentialSecrets(this.secretStorageService);
 	}
 
 	private async _refreshFeatherlessApiKeyState(): Promise<boolean> {
-		this.featherlessApiKeyConfigured = !!(await this._readFeatherlessApiKeyFromStorage());
-		this.featherlessOAuthConfigured = await this._readFeatherlessOAuthFromStorage();
+		const { apiKey, oauthToken } = await this._readFeatherlessCredentials();
+		this.featherlessApiKeyConfigured = !!apiKey;
+		this.featherlessOAuthConfigured = !!oauthToken;
 
 		// Prefer the extension's view of credentials when secret-storage reads race or miss.
 		if (!this._hasFeatherlessCredentials()) {
