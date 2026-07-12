@@ -139,20 +139,30 @@ export async function createCheckRun(env: AgentEnv, input: {
 	title: string;
 	summary: string;
 }) {
-	const checksEnv = { ...env, githubToken: env.checksGithubToken || env.githubToken };
-	return gh(checksEnv, `/repos/${env.owner}/${env.repo}/check-runs`, {
-		method: 'POST',
-		body: JSON.stringify({
-			name: input.name,
-			head_sha: input.headSha,
-			status: 'completed',
-			conclusion: input.conclusion,
-			output: {
-				title: input.title,
-				summary: input.summary,
-			},
-		}),
-	});
+	const token = env.checksGithubToken || env.githubToken;
+	const checksEnv = { ...env, githubToken: token };
+	try {
+		return await gh(checksEnv, `/repos/${env.owner}/${env.repo}/check-runs`, {
+			method: 'POST',
+			body: JSON.stringify({
+				name: input.name,
+				head_sha: input.headSha,
+				status: 'completed',
+				conclusion: input.conclusion,
+				output: {
+					title: input.title,
+					summary: input.summary,
+				},
+			}),
+		});
+	} catch (err) {
+		// Do not abort address-review after real work; log and continue.
+		console.warn(
+			`createCheckRun(${input.name}) failed (token ends …${String(token).slice(-4)}):`,
+			err instanceof Error ? err.message : err,
+		);
+		return undefined;
+	}
 }
 
 export function isCodeRabbitLogin(login: string): boolean {

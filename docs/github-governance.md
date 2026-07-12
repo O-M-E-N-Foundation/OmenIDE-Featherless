@@ -103,7 +103,7 @@ Prefer a **GitHub App** installation token over a personal PAT so merges and che
 
 Address-review:
 - Debounces ~90s so a burst of inline comments becomes one agent run
-- Checks out the **PR head branch** (not `main`)
+- Checks out the **PR head branch** for edits, but always runs the **omen-agent harness from `main`** (PR branches lag and previously ran a stale agent that died on check-run 403s)
 - Treats unresolved review threads as the source of truth (agent `clean=true` is ignored if threads remain)
 - Posts `omen-review-clean` with the Actions `GITHUB_TOKEN` (`checks:write`); the agent PAT alone often cannot create check runs
 - Auto-merge refuses to ship without CodeRabbit **APPROVED** and zero unresolved CodeRabbit threads
