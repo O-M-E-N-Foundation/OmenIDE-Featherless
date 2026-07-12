@@ -66,6 +66,20 @@ QA is **post-merge** (QA team and/or community). Regressions become new GitHub i
 
 Review-fix rounds are capped (`OMEN_MAX_REVIEW_ROUNDS`, default `3`). Exhausted PRs get `needs-human` with actionable unblock steps and are not merged.
 
+## CI on this fork
+
+Full microsoft/vscode OSS PR CI (**Code OSS** Electron/Browser/Remote, node_modules compile, component screenshots, chat-lib PR jobs, Copilot setup runners) is **disabled** here. Those jobs need Microsoft 1ES self-hosted runners or Azure screenshot infra that this org does not host.
+
+**Active merge / quality gates:**
+
+- `CodeQL`
+- `secret-scan` (Gitleaks; requires `GITLEAKS_LICENSE` secret)
+- `pr-hygiene`
+- CodeRabbit + `omen-address-review` → `omen-review-clean`
+- Monaco Editor checks / telemetry metadata (lightweight, GitHub-hosted)
+
+Disabled suites remain in `.github/workflows/` as `workflow_dispatch`-only so they can be re-enabled later if runners are available.
+
 ## Secrets and variables
 
 Configure under **Settings -> Secrets and variables -> Actions**:

@@ -1,14 +1,8 @@
 name: Component Fixtures
 
+# OMEN: Disabled on this fork — depends on Microsoft Azure screenshot service (hediet-screenshots).
 on:
-  push:
-    branches:
-      - main
-      - 'release/*'
-  pull_request:
-    branches:
-      - main
-      - 'release/*'
+  workflow_dispatch:
 
 permissions:
   contents: read
