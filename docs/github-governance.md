@@ -18,6 +18,7 @@ This repository (`O-M-E-N-Foundation/OmenIDE-Featherless`) uses branch protectio
 |-------|---------|
 | `ready-for-ai` | Write collaborator approved implement -> CodeRabbit -> **auto-merge** |
 | `ai-in-flight` | Agent currently working this issue |
+| `in-review` | PR open for this issue; CodeRabbit / address-review / CI until merge |
 | `ai-authored` | PR produced by the Omen agent |
 | `needs-human` | Blocked only when the agent posts **actionable questions + unblock steps** |
 | `triage:needs-info` | Incomplete issue |
@@ -55,7 +56,7 @@ Issues labeled `security` never enter the autonomous path.
 ```
 Issue opened -> Featherless triage (comment + triage labels)
 Write collaborator adds ready-for-ai
-  -> implement (branch + PR labeled ai-authored)
+  -> implement (branch + PR labeled ai-authored; issue labeled in-review)
   -> CodeRabbit review (REQUEST_CHANGES while findings remain)
   -> Featherless address-review (fix + resolve threads; debounce concurrent comments)
   -> CodeRabbit re-review **APPROVE**

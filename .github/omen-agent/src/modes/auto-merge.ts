@@ -61,6 +61,13 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 				pr.number,
 				'### Omen auto-merge\n\nSquash-merged to `main` after CodeRabbit **approval**, resolved review threads, and security checks passed.\n\n**QA is post-merge.** Please verify in a build/release; file a new issue if you find a regression.',
 			);
+			// Linked issues close via "Fixes #N"; clear in-review if still open somehow.
+			const linked = await gh.listClosingIssueNumbers(env, pr.number);
+			for (const issueNumber of linked) {
+				await gh.removeIssueLabel(env, issueNumber, 'in-review');
+				await gh.removeIssueLabel(env, issueNumber, 'ai-in-flight');
+				await gh.removeIssueLabel(env, issueNumber, 'ready-for-ai');
+			}
 			console.log(`Merged PR #${pr.number}`);
 		} catch (err) {
 			await gh.addPullLabels(env, pr.number, ['needs-human']);
