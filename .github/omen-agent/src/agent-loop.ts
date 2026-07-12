@@ -17,8 +17,11 @@ export async function runAgentLoop(options: {
 	tools: ToolDefinition[];
 	/** When true, do not exit on text-only replies; nudge toward tools/finish instead. */
 	requireFinish?: boolean;
+	/** Finish tool name used in nudges (default finish_implement). */
+	finishToolName?: string;
 }): Promise<ToolContext> {
-	const ctx: ToolContext = { env: options.env };
+	const finishName = options.finishToolName || 'finish_implement';
+	const ctx: ToolContext = { env: options.env, wroteAnything: false };
 	const messages: ChatMessage[] = [
 		{ role: 'system', content: readPrompt(options.systemPromptName) },
 		{ role: 'user', content: options.userPrompt },
@@ -34,13 +37,13 @@ export async function runAgentLoop(options: {
 			messages.push({
 				role: 'user',
 				content: wroteAnything
-					? `Only ${remaining} steps left. Commit, push, open/update the PR with gh_create_pr if needed, then call finish_implement(status=ok, pr_url=...). Do not explore further.`
-					: `Only ${remaining} steps left and you have NOT written files yet. Stop exploring. Immediately write_file/edit_file for the splash contribution, then commit/push/PR, then finish_implement. Prefer implementing over perfect research.`,
+					? `Only ${remaining} steps left. Commit, push, then call ${finishName}. Do not explore further.`
+					: `Only ${remaining} steps left and you have NOT written files yet. STOP exploring. Immediately write_file/edit_file to fix the open review items, commit, push, then call ${finishName}.`,
 			});
-		} else if (exploreStreak >= 10 && !wroteAnything) {
+		} else if (exploreStreak >= 8 && !wroteAnything) {
 			messages.push({
 				role: 'user',
-				content: 'You have explored for many steps without writing code. STOP exploring. Create/edit the implementation files now with write_file/edit_file using the issue plan. Do not run more searches unless a specific path from the plan is missing.',
+				content: `You have explored for many steps without writing code. STOP exploring. Apply the review fixes now with write_file/edit_file. Exploring without edits will fail this job.`,
 			});
 			exploreStreak = 0;
 		}
@@ -57,7 +60,7 @@ export async function runAgentLoop(options: {
 			if (options.requireFinish && emptyReplies < 3 && !ctx.finished) {
 				messages.push({
 					role: 'user',
-					content: 'You replied without tools. Continue by calling tools. You must either write code and finish_implement(status=ok), or finish_implement(status=needs-human) with blocker/questions/unblock_steps.',
+					content: `You replied without tools. Continue by calling tools. You must edit code and call ${finishName}, or escalate with needs_human + blocker/questions/unblock_steps.`,
 				});
 				continue;
 			}
@@ -70,6 +73,7 @@ export async function runAgentLoop(options: {
 			console.log(`tool: ${call.function.name}`);
 			if (WRITE_TOOLS.has(call.function.name)) {
 				wroteAnything = true;
+				ctx.wroteAnything = true;
 				stepWasExploreOnly = false;
 				exploreStreak = 0;
 			} else if (!EXPLORE_TOOLS.has(call.function.name)) {

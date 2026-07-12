@@ -166,6 +166,7 @@ jobs:
           OMEN_AGENT_MODEL: ${{ vars.OMEN_AGENT_MODEL }}
           OMEN_MAX_REVIEW_ROUNDS: ${{ vars.OMEN_MAX_REVIEW_ROUNDS }}
         run: |
+          FAILED=0
           mapfile -t PRS < <(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=30" --jq '.[] | select(any(.labels[]; .name=="ai-authored")) | .number')
           for n in "${PRS[@]:-}"; do
             [ -z "$n" ] && continue
@@ -173,5 +174,14 @@ jobs:
             REF=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/$n" --jq .head.ref)
             git fetch origin "$REF"
             git checkout -B "$REF" "origin/$REF"
-            OMEN_PR_NUMBER="$n" OMEN_REVIEW_ROUND=1 node --experimental-strip-types src/index.ts address-review || true
+            OMEN_PR_NUMBER="$n" OMEN_REVIEW_ROUND=1 node --experimental-strip-types src/index.ts address-review
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              echo "address-review failed for PR #$n (exit $status)"
+              FAILED=1
+            fi
           done
+          if [ "${FAILED:-0}" -ne 0 ]; then
+            echo "One or more address-review sweeps failed"
+            exit 1
+          fi
