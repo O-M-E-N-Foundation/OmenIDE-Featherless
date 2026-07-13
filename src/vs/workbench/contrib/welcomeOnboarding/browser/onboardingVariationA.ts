@@ -404,7 +404,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			try {
 				const hasFromExtension = await this.commandService.executeCommand<boolean>(FEATHERLESS_EXTENSION_HAS_KEY_COMMAND);
 				if (hasFromExtension) {
-					this.featherlessOAuthConfigured = true;
+					this.featherlessApiKeyConfigured = true;
 				}
 			} catch {
 				// Extension may not be activated yet.
