@@ -8,8 +8,10 @@ import * as gh from '../github.ts';
 
 const REQUIRED_CHECKS = ['CodeQL', 'secret-scan', 'pr-hygiene', 'omen-typecheck', 'omen-review-clean'];
 
-function checkOk(runs: Array<{ name: string; status: string; conclusion: string | null }>, name: string): boolean {
-	const matches = runs.filter(r => r.name === name || r.name.startsWith(name));
+function checkOk(runs: Array<{ name: string; status: string; conclusion: string | null; completed_at?: string | null }>, name: string): boolean {
+	const matches = runs
+		.filter(r => r.name === name || r.name.startsWith(name))
+		.sort((a, b) => String(a.completed_at || '').localeCompare(String(b.completed_at || '')));
 	if (!matches.length) {
 		return false;
 	}
@@ -22,6 +24,9 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 		? [env.prNumber]
 		: (await gh.listOpenAiPulls(env)).map(p => p.number);
 
+	let blocked = 0;
+	let merged = 0;
+
 	for (const prNumber of prNumbers) {
 		const pr = await gh.getPull(env, prNumber);
 		const labels = pr.labels.map(l => l.name);
@@ -32,25 +37,40 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 			continue;
 		}
 		if (labels.includes('needs-human') || labels.includes('security')) {
+			console.log(`PR #${pr.number}: skipped (needs-human/security)`);
+			blocked++;
 			continue;
 		}
 
 		const rabbitReview = await gh.getLatestCodeRabbitReview(env, pr.number);
 		if (!gh.codeRabbitApproved(rabbitReview)) {
 			console.log(`PR #${pr.number}: waiting for CodeRabbit APPROVED (got ${rabbitReview?.state ?? 'none'})`);
+			blocked++;
 			continue;
 		}
 
 		const unresolved = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
 		if (unresolved.length) {
 			console.log(`PR #${pr.number}: ${unresolved.length} unresolved CodeRabbit thread(s)`);
+			blocked++;
 			continue;
 		}
+
+		// Ensure omen-review-clean is green now that CodeRabbit has approved.
+		await runMergeReady({ ...env, prNumber: pr.number });
 
 		const { check_runs } = await gh.listCheckRunsForRef(env, pr.head.sha);
 		const missing = REQUIRED_CHECKS.filter(name => !checkOk(check_runs, name));
 		if (missing.length) {
 			console.log(`PR #${pr.number}: missing/red checks: ${missing.join(', ')}`);
+			// Keep branch current so strict status checks can pass on next sweep.
+			try {
+				await gh.updatePullBranch(env, pr.number);
+				console.log(`PR #${pr.number}: requested update-branch from main`);
+			} catch (err) {
+				console.warn(`PR #${pr.number}: update-branch failed:`, err instanceof Error ? err.message : err);
+			}
+			blocked++;
 			continue;
 		}
 
@@ -61,7 +81,6 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 				pr.number,
 				'### Omen auto-merge\n\nSquash-merged to `main` after CodeRabbit **approval**, resolved review threads, and security checks passed.\n\n**QA is post-merge.** Please verify in a build/release; file a new issue if you find a regression.',
 			);
-			// Linked issues close via "Fixes #N"; clear in-review if still open somehow.
 			const linked = await gh.listClosingIssueNumbers(env, pr.number);
 			for (const issueNumber of linked) {
 				await gh.removeIssueLabel(env, issueNumber, 'in-review');
@@ -69,6 +88,7 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 				await gh.removeIssueLabel(env, issueNumber, 'ready-for-ai');
 			}
 			console.log(`Merged PR #${pr.number}`);
+			merged++;
 		} catch (err) {
 			await gh.addPullLabels(env, pr.number, ['needs-human']);
 			await gh.commentOnIssue(
@@ -76,8 +96,11 @@ export async function runAutoMerge(env: AgentEnv): Promise<void> {
 				pr.number,
 				`### Omen auto-merge\n\nMerge failed: ${err instanceof Error ? err.message : String(err)}\n\nLabeled \`needs-human\`.`,
 			);
+			blocked++;
 		}
 	}
+
+	console.log(`auto-merge done: merged=${merged} blocked=${blocked} considered=${prNumbers.length}`);
 }
 
 export async function runMergeReady(env: AgentEnv): Promise<void> {
@@ -86,23 +109,31 @@ export async function runMergeReady(env: AgentEnv): Promise<void> {
 		throw new Error('OMEN_PR_NUMBER required');
 	}
 	const pr = await gh.getPull(env, env.prNumber);
+	if (!pr.labels.some(l => l.name === 'ai-authored')) {
+		await gh.ensureAiAuthoredLabel(env, pr.number);
+	}
 	const unresolved = await gh.listUnresolvedCodeRabbitThreads(env, pr.number);
 	const rabbitReview = await gh.getLatestCodeRabbitReview(env, pr.number);
-	const approved = gh.codeRabbitApproved(rabbitReview) && unresolved.length === 0;
+	const typecheckFailure = await gh.getTypecheckFailureSummary(env, pr.head.sha);
+	const approved = gh.codeRabbitApproved(rabbitReview) && unresolved.length === 0 && !typecheckFailure;
 	await gh.createCheckRun(env, {
 		name: 'omen-review-clean',
 		headSha: pr.head.sha,
-		conclusion: approved ? 'success' : rabbitReview ? 'neutral' : 'neutral',
+		conclusion: approved ? 'success' : 'neutral',
 		title: approved
 			? 'CodeRabbit approved + threads clear'
-			: unresolved.length
-				? `${unresolved.length} CodeRabbit thread(s) open`
-				: rabbitReview
-					? `Waiting for CodeRabbit approval (state: ${rabbitReview.state})`
-					: 'Waiting for CodeRabbit',
+			: typecheckFailure
+				? 'omen-typecheck still failing'
+				: unresolved.length
+					? `${unresolved.length} CodeRabbit thread(s) open`
+					: rabbitReview
+						? `Waiting for CodeRabbit approval (state: ${rabbitReview.state})`
+						: 'Waiting for CodeRabbit',
 		summary: [
 			`CodeRabbit review state: ${rabbitReview?.state ?? '(none)'}`,
 			`Unresolved CodeRabbit threads: ${unresolved.length}`,
+			`Typecheck failing: ${Boolean(typecheckFailure)}`,
 		].join('\n'),
 	});
+	console.log(`merge-ready PR #${pr.number}: ${approved ? 'success' : 'neutral'} (review=${rabbitReview?.state ?? 'none'})`);
 }

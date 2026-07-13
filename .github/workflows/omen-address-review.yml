@@ -20,7 +20,7 @@ on:
       review_round:
         description: Review round number
         required: false
-        default: '1'
+        default: '0'
         type: string
 
 permissions:
@@ -33,10 +33,10 @@ jobs:
   address:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Job-level so skipped issue_comment events do not cancel real address-review runs.
+    # Do NOT cancel in-progress: CodeRabbit comment bursts must coalesce, not kill a running agent.
     concurrency:
       group: omen-address-${{ inputs.pr_number || github.event.pull_request.number || github.event.issue.number || github.event.check_run.pull_requests[0].number || github.run_id }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
@@ -64,7 +64,8 @@ jobs:
               prNumber = context.payload.check_run.pull_requests?.[0]?.number ?? null;
             }
             core.setOutput('number', prNumber ? String(prNumber) : '');
-            core.setOutput('round', context.payload.inputs?.review_round || '1');
+            // 0 = let the agent read omen-round-N from PR labels
+            core.setOutput('round', context.payload.inputs?.review_round || '0');
 
       - name: Debounce CodeRabbit comment bursts
         if: >
@@ -124,7 +125,34 @@ jobs:
         if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
+
+      - name: Install native build deps
+        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libx11-dev libxkbfile-dev libkrb5-dev
+
+      - name: Compute node modules cache key
+        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+        id: nodeModulesCacheKey
+        run: echo "value=$(node build/azure-pipelines/common/computeNodeModulesCacheKey.ts)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache node modules
+        if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
+        id: cacheNodeModules
+        uses: actions/cache@v4
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-omen-address-nm-${{ steps.nodeModulesCacheKey.outputs.value }}
+          restore-keys: ${{ runner.os }}-omen-address-nm-
+
+      - name: Install dependencies
+        if: (steps.pr.outputs.number != '' || github.event_name == 'schedule') && steps.cacheNodeModules.outputs.cache-hit != 'true'
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: npm ci
 
       - name: Configure git
         if: steps.pr.outputs.number != '' || github.event_name == 'schedule'
@@ -132,21 +160,8 @@ jobs:
           git config user.name "Omen Agent"
           git config user.email "omen-agent[bot]@users.noreply.github.com"
 
-      - name: Ensure PR is ai-authored
-        if: steps.pr.outputs.number != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          LABELS=$(gh api "repos/${{ github.repository }}/issues/${{ steps.pr.outputs.number }}" --jq '[.labels[].name] | join(",")')
-          echo "Labels: $LABELS"
-          if ! echo "$LABELS" | grep -q 'ai-authored'; then
-            echo "Not ai-authored; skipping"
-            echo "skip=1" >> "$GITHUB_ENV"
-          fi
-
       - name: Address CodeRabbit feedback
-        if: steps.pr.outputs.number != '' && env.skip != '1'
+        if: steps.pr.outputs.number != ''
         working-directory: ${{ steps.agent.outputs.dir }}
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
@@ -163,18 +178,21 @@ jobs:
 
       - name: Sweep open AI PRs
         if: github.event_name == 'schedule'
-        working-directory: ${{ steps.agent.outputs.dir }}
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           OMEN_CHECKS_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_WORKSPACE: ${{ github.workspace }}
           OMEN_AGENT_MODEL: ${{ vars.OMEN_AGENT_MODEL }}
           OMEN_MAX_REVIEW_ROUNDS: ${{ vars.OMEN_MAX_REVIEW_ROUNDS }}
+          AGENT_DIR: ${{ steps.agent.outputs.dir }}
+        shell: bash
         run: |
+          set -euo pipefail
           FAILED=0
+          # git must run in GITHUB_WORKSPACE (the repo checkout), not the agent archive dir.
+          cd "${GITHUB_WORKSPACE}"
           mapfile -t PRS < <(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=30" --jq '.[] | select(any(.labels[]; .name=="ai-authored")) | .number')
           for n in "${PRS[@]:-}"; do
             [ -z "$n" ] && continue
@@ -182,7 +200,8 @@ jobs:
             REF=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/$n" --jq .head.ref)
             git fetch origin "$REF"
             git checkout -B "$REF" "origin/$REF"
-            OMEN_PR_NUMBER="$n" OMEN_REVIEW_ROUND=1 node --experimental-strip-types src/index.ts address-review
+            # Round comes from omen-round-N labels inside the agent (OMEN_REVIEW_ROUND=0).
+            (cd "$AGENT_DIR" && OMEN_PR_NUMBER="$n" OMEN_REVIEW_ROUND=0 GITHUB_WORKSPACE="$GITHUB_WORKSPACE" node --experimental-strip-types src/index.ts address-review)
             status=$?
             if [ "$status" -ne 0 ]; then
               echo "address-review failed for PR #$n (exit $status)"

@@ -18,21 +18,44 @@ function formatThreads(threads: gh.ReviewThreadSummary[]): string {
 		.join('\n\n---\n\n');
 }
 
+function reviewCleanStatus(opts: {
+	clean: boolean;
+	remaining: number;
+	typecheckStillFailing: boolean;
+	waitingForApprove: boolean;
+}): string {
+	if (opts.clean) {
+		return 'success';
+	}
+	if (opts.typecheckStillFailing || opts.remaining > 0) {
+		return 'failed';
+	}
+	if (opts.waitingForApprove) {
+		return 'pending (waiting for CodeRabbit APPROVED)';
+	}
+	return 'pending';
+}
+
 export async function runAddressReview(env: AgentEnv): Promise<void> {
 	if (!env.prNumber) {
 		throw new Error('OMEN_PR_NUMBER required for address-review');
 	}
 	const pr = await gh.getPull(env, env.prNumber);
+
+	// Own any PR that CodeRabbit (or typecheck failure) kicked us into.
 	if (!pr.labels.some(l => l.name === 'ai-authored')) {
-		console.log('Skipping non ai-authored PR');
-		return;
+		await gh.ensureAiAuthoredLabel(env, pr.number);
+		console.log(`Labeled PR #${pr.number} ai-authored so the agentic loop can own it`);
 	}
 	if (pr.labels.some(l => l.name === 'needs-human' || l.name === 'security')) {
 		console.log('Skipping PR with needs-human/security');
 		return;
 	}
 
-	const round = Number(process.env.OMEN_REVIEW_ROUND || '1');
+	const labeledRound = gh.getReviewRoundFromLabels(pr.labels);
+	const envRound = Number(process.env.OMEN_REVIEW_ROUND || '0');
+	// Prefer persisted label; env override only when explicitly higher (workflow_dispatch).
+	const round = Math.max(labeledRound, envRound > 0 ? envRound : 1);
 	if (round > env.maxReviewRounds) {
 		const exhausted = {
 			blocker: `Exceeded max CodeRabbit fix rounds (${env.maxReviewRounds}).`,
@@ -145,9 +168,10 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			'HARD RULES:',
 			'- You MUST call write_file or edit_file for each valid finding before finishing.',
 			'- Explore-only runs are a FAILURE. Do not finish without code edits + git push.',
-			'- Client must typecheck: after edits run `npm run typecheck-client` (npm ci first if needed) and fix all TS errors before finish.',
+			'- Dependencies are already installed when possible. Run `npm run typecheck-client` after edits and fix all TS errors before finish.',
 			`- Checkout: git fetch origin ${pr.head.ref} && git checkout ${pr.head.ref}`,
 			'- Push to that branch only (never main).',
+			'- Do not modify .github/workflows/ — CI/workflow changes must land on main separately.',
 			'- After fixing, put thread_id values in finish_address_review.resolved_thread_ids.',
 			'- clean=true only when every unresolved CodeRabbit thread is fixed AND typecheck is clean.',
 			'',
@@ -207,18 +231,32 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 	const pushedFixes = refreshed.head.sha !== startSha;
 	const wroteAnything = Boolean(ctx.wroteAnything);
 
-	// Never trust agent clean=true while CodeRabbit threads remain open or typecheck is red.
-	let clean = Boolean(finished?.clean) && remaining.length === 0 && !typecheckStillFailing && (wroteAnything || pushedFixes || (unresolvedAtStart.length === 0 && !typecheckFailure));
+	// Persist next round when we actually pushed fixes so schedule/retry doesn't reset to 1.
+	if (pushedFixes || wroteAnything) {
+		await gh.setReviewRoundLabel(env, pr.number, round + 1);
+	}
+
+	// Threads clear + typecheck clean is "waiting for approve", not a hard failure.
+	const threadsAndTypecheckClear = remaining.length === 0 && !typecheckStillFailing;
+	let clean = Boolean(finished?.clean) && threadsAndTypecheckClear && (wroteAnything || pushedFixes || (unresolvedAtStart.length === 0 && !typecheckFailure));
 	if (Boolean(finished?.clean) && remaining.length > 0) {
 		console.warn(`Agent claimed clean=true but ${remaining.length} CodeRabbit thread(s) remain unresolved`);
 	}
 	if (Boolean(finished?.clean) && typecheckStillFailing) {
 		console.warn('Agent claimed clean=true but omen-typecheck is still failing');
 	}
-	if (clean && !gh.codeRabbitApproved(refreshedReview)) {
+	const waitingForApprove = threadsAndTypecheckClear && !gh.codeRabbitApproved(refreshedReview);
+	if (clean && waitingForApprove) {
 		clean = false;
 		console.log('Fixes applied / threads cleared; waiting for CodeRabbit APPROVED review');
 	}
+
+	const cleanLabel = reviewCleanStatus({
+		clean,
+		remaining: remaining.length,
+		typecheckStillFailing: Boolean(typecheckStillFailing),
+		waitingForApprove,
+	});
 
 	await gh.commentOnIssue(
 		env,
@@ -233,7 +271,7 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			`- Unresolved CodeRabbit threads remaining: **${remaining.length}**`,
 			`- omen-typecheck: **${typecheckStillFailing ? 'FAILING' : 'ok/pending'}**`,
 			`- Latest CodeRabbit review: **${refreshedReview?.state ?? '(none)'}**`,
-			`- omen-review-clean: **${clean ? 'success' : remaining.length || typecheckStillFailing || unresolvedAtStart.length || typecheckFailure ? 'failed' : 'pending'}**`,
+			`- omen-review-clean: **${cleanLabel}**`,
 		].join('\n'),
 	);
 
@@ -281,4 +319,6 @@ export async function runAddressReview(env: AgentEnv): Promise<void> {
 			`Address-review incomplete on PR #${pr.number}: omen-typecheck still failing after round ${round}.`,
 		);
 	}
+	// Threads clear + typecheck green but not yet APPROVED → exit 0 (neutral check).
+	// merge-ready / auto-merge will promote omen-review-clean when CodeRabbit approves.
 }

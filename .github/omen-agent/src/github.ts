@@ -133,6 +133,7 @@ export async function listCheckRunsForRef(env: AgentEnv, ref: string) {
 			name: string;
 			status: string;
 			conclusion: string | null;
+			completed_at: string | null;
 			output?: { title?: string; summary?: string; text?: string };
 		}>;
 	}>(env, `/repos/${env.owner}/${env.repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=100`);
@@ -300,6 +301,11 @@ export async function resolveReviewThread(env: AgentEnv, threadId: string): Prom
 
 export type PullReviewState = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING' | string;
 
+/**
+ * Latest *effective* CodeRabbit review. DISMISSED entries are ignored — GitHub
+ * marks prior approvals DISMISSED when dismiss_stale_reviews_on_push fires, and
+ * treating those as the "latest" state permanently stalls auto-merge.
+ */
 export async function getLatestCodeRabbitReview(env: AgentEnv, prNumber: number): Promise<{
 	state: PullReviewState | null;
 	submittedAt: string | null;
@@ -309,7 +315,9 @@ export async function getLatestCodeRabbitReview(env: AgentEnv, prNumber: number)
 		state: string;
 		submitted_at: string | null;
 	}>>(env, `/repos/${env.owner}/${env.repo}/pulls/${prNumber}/reviews?per_page=100`);
-	const rabbit = reviews.filter(r => isCodeRabbitLogin(r.user.login));
+	const rabbit = reviews
+		.filter(r => isCodeRabbitLogin(r.user.login))
+		.filter(r => r.state !== 'DISMISSED' && r.state !== 'PENDING');
 	if (!rabbit.length) {
 		return null;
 	}
@@ -319,6 +327,44 @@ export async function getLatestCodeRabbitReview(env: AgentEnv, prNumber: number)
 
 export function codeRabbitApproved(review: { state: PullReviewState | null } | null): boolean {
 	return Boolean(review && review.state === 'APPROVED');
+}
+
+/** Read omen-round-N label; defaults to 1. */
+export function getReviewRoundFromLabels(labels: Array<{ name: string }>): number {
+	let best = 0;
+	for (const label of labels) {
+		const match = /^omen-round-(\d+)$/.exec(label.name);
+		if (match) {
+			best = Math.max(best, Number(match[1]));
+		}
+	}
+	return best > 0 ? best : 1;
+}
+
+export async function setReviewRoundLabel(env: AgentEnv, prNumber: number, round: number): Promise<void> {
+	const pr = await getPull(env, prNumber);
+	const stale = pr.labels.map(l => l.name).filter(n => /^omen-round-\d+$/.test(n));
+	for (const name of stale) {
+		await removeIssueLabel(env, prNumber, name);
+	}
+	await addPullLabels(env, prNumber, [`omen-round-${round}`]);
+}
+
+/** Ensure ai-authored is present so address-review/auto-merge own the PR. */
+export async function ensureAiAuthoredLabel(env: AgentEnv, prNumber: number): Promise<boolean> {
+	const pr = await getPull(env, prNumber);
+	if (pr.labels.some(l => l.name === 'ai-authored')) {
+		return false;
+	}
+	await addPullLabels(env, prNumber, ['ai-authored']);
+	return true;
+}
+
+export async function updatePullBranch(env: AgentEnv, prNumber: number): Promise<void> {
+	await gh(env, `/repos/${env.owner}/${env.repo}/pulls/${prNumber}/update-branch`, {
+		method: 'PUT',
+		body: JSON.stringify({}),
+	});
 }
 
 export async function listClosingIssueNumbers(env: AgentEnv, prNumber: number): Promise<number[]> {

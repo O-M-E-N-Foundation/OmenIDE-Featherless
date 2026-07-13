@@ -1,7 +1,6 @@
 name: Omen auto-merge
 
 on:
-  # Prefer schedule + manual; avoid check_suite storms. Quote descriptions that contain colons.
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
@@ -10,15 +9,17 @@ on:
         description: 'Optional PR number (default: all open ai-authored)'
         required: false
         type: string
-  # Re-check when required CI completes (filtered in job).
+  # Re-check when required CI completes or CodeRabbit submits a review.
   check_run:
     types: [completed]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: write
   issues: write
   pull-requests: write
-  checks: read
+  checks: write
 
 concurrency:
   group: omen-auto-merge
@@ -30,9 +31,13 @@ jobs:
     timeout-minutes: 20
     # Skip noisy check_run events that are not our merge gates.
     if: >
-      github.event_name != 'check_run' ||
-      contains(fromJSON('["CodeQL","secret-scan","pr-hygiene","omen-review-clean","CodeRabbit"]'), github.event.check_run.name) ||
-      startsWith(github.event.check_run.name, 'CodeQL')
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.user.login, 'coderabbit')) ||
+      (github.event_name == 'check_run' && (
+        contains(fromJSON('["CodeQL","secret-scan","pr-hygiene","omen-typecheck","omen-review-clean","CodeRabbit"]'), github.event.check_run.name) ||
+        startsWith(github.event.check_run.name, 'CodeQL')
+      ))
     steps:
       - name: Checkout agent
         uses: actions/checkout@v4
@@ -42,6 +47,32 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Resolve target PR (optional)
+        id: target
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.pr_number }}" ]; then
+            echo "pr=${{ inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request_review" ]; then
+            echo "pr=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "check_run" ] && [ -n "${{ github.event.check_run.pull_requests[0].number }}" ]; then
+            echo "pr=${{ github.event.check_run.pull_requests[0].number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pr=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Promote omen-review-clean when CodeRabbit approved
+        if: steps.target.outputs.pr != ''
+        working-directory: .github/omen-agent
+        env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+          OMEN_AGENT_GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          OMEN_CHECKS_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          OMEN_PR_NUMBER: ${{ steps.target.outputs.pr }}
+        run: node --experimental-strip-types src/index.ts merge-ready
+
       - name: Auto-merge eligible AI PRs
         working-directory: .github/omen-agent
         env:
@@ -50,5 +81,5 @@ jobs:
           OMEN_CHECKS_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.OMEN_AGENT_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          OMEN_PR_NUMBER: ${{ inputs.pr_number || '' }}
+          OMEN_PR_NUMBER: ${{ steps.target.outputs.pr }}
         run: node --experimental-strip-types src/index.ts auto-merge

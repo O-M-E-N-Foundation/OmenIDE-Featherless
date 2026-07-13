@@ -10,7 +10,27 @@ This repository (`O-M-E-N-Foundation/OmenIDE-Featherless`) uses branch protectio
   - Status checks: `CodeQL`, `secret-scan`, `pr-hygiene`, **`omen-typecheck`** (client TypeScript)
   - **1 approving review** (CodeRabbit APPROVE when review is clean; humans can approve too)
   - **All review threads resolved**
+  - **Approvals are not dismissed on push** (`dismiss_stale_reviews_on_push: false`) so address-review fix commits do not wipe a CodeRabbit APPROVE and permanently stall auto-merge
 - For **`ai-authored` PRs**, auto-merge additionally requires a successful `omen-review-clean` check (agent verified CodeRabbit APPROVED + no open CodeRabbit threads + typecheck not failing). That check is **not** a branch ruleset requirement so human PRs are not blocked by it.
+
+## Agentic loop (must close without a human Cursor session)
+
+```
+ready-for-ai → implement (PR + ai-authored)
+  → CodeRabbit review / typecheck failure
+  → address-review (edit, push, resolve threads, bump omen-round-N)
+  → CodeRabbit APPROVE
+  → merge-ready posts omen-review-clean success
+  → auto-merge squash
+```
+
+Hardening notes:
+
+- Address-review does **not** cancel in-progress runs (CodeRabbit comment storms used to kill agents mid-fix).
+- Schedule sweep runs `git` in `$GITHUB_WORKSPACE`, not the staged agent archive.
+- Review rounds persist on `omen-round-N` labels (not reset to 1 every schedule tick).
+- Address-review installs `node_modules` before the agent so typecheck remediations are feasible.
+- Auto-merge wakes on `omen-typecheck` and CodeRabbit `pull_request_review`, runs `merge-ready`, and updates the branch from `main` when strict checks are stale.
 
 ## Labels
 
