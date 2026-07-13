@@ -44,7 +44,6 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ensureFeatherlessChatExtensionReady } from '../../chat/common/featherlessSetup.js';
 import { FEATHERLESS_EXTENSION_BOOTSTRAP_COMMAND, FEATHERLESS_EXTENSION_HAS_KEY_COMMAND, FEATHERLESS_EXTENSION_SET_KEY_COMMAND, FEATHERLESS_EXTENSION_SIGN_IN_COMMAND } from '../../../services/chat/common/featherless.js';
-import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
 import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
@@ -88,17 +87,12 @@ type OnboardingActionEvent = {
 type EnterpriseSignInUiState = 'options' | 'instance' | 'progress';
 
 import {
-	FEATHERLESS_API_KEY_SECRET,
-	OMENIDE_CHAT_EXTENSION_ID,
-	getExtensionSecretStorageKey,
+	getFeatherlessApiKeySecretStorageKey,
 	readFeatherlessCredentialSecrets,
 } from '../../../services/chat/common/featherlessSecrets.js';
 
 assertDefined(product.defaultChatAgent, 'Onboarding requires a default chat agent product configuration.');
 const defaultChat = product.defaultChatAgent;
-
-/** Extension id for the in-tree Copilot/Featherless extension (`extensions/copilot`). */
-const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier(OMENIDE_CHAT_EXTENSION_ID);
 
 /**
  * Variation A — Classic Wizard Modal
@@ -354,7 +348,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			// (activation is onStartupFinished), so extension commands are not
 			// available yet — but secret storage is always reachable from the workbench.
 			await this.secretStorageService.set(
-				getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_API_KEY_SECRET),
+				getFeatherlessApiKeySecretStorageKey(),
 				key,
 			);
 			this.featherlessApiKeyConfigured = true;

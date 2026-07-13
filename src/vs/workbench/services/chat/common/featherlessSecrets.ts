@@ -40,11 +40,11 @@ export function getFeatherlessOAuthSecretStorageKey(extensionId: string = OMENID
 }
 
 function getLegacyFeatherlessApiKeySecretStorageKey(): string {
-	return getLegacyExtensionSecretStorageKey(OMENIDE_CHAT_EXTENSION_ID, FEATHERLESS_API_KEY_SECRET);
+	return getLegacyExtensionSecretStorageKey(OMENIDE_CHAT_EXTENSION_ID, 'copilot-byok-Featherless-api-key');
 }
 
 function getLegacyFeatherlessOAuthSecretStorageKey(): string {
-	return getLegacyExtensionSecretStorageKey(OMENIDE_CHAT_EXTENSION_ID, FEATHERLESS_OAUTH_ACCESS_TOKEN_SECRET);
+	return getLegacyExtensionSecretStorageKey(OMENIDE_CHAT_EXTENSION_ID, 'copilot-byok-Featherless-oauth-access-token');
 }
 
 export function isFeatherlessCredentialSecretKey(secretKey: string): boolean {
