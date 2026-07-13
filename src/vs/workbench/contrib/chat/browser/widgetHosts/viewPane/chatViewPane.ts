@@ -965,8 +965,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			return;
 		}
 		const requested = resource;
-		await this.loadSession(requested);
-		const shown = this._widget.viewModel?.sessionResource;
+		const loaded = await this.loadSession(requested);
+		if (!loaded || this._widget.viewModel?.model !== loaded) {
+			return;
+		}
+		const shown = loaded.sessionResource;
 		if (shown && !isEqual(shown, requested)) {
 			// Empty sessions can be recycled into a new URI on reload.
 			if (this._openTabs.contains(requested)) {
