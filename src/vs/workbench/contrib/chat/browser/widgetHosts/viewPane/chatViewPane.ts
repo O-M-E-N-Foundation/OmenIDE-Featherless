@@ -51,7 +51,7 @@ import { IChatModel, IChatModelInputState } from '../../../common/model/chatMode
 import { CHAT_PROVIDER_ID } from '../../../common/participants/chatParticipantContribTypes.js';
 import { IChatModelReference, IChatService } from '../../../common/chatService/chatService.js';
 import { IChatSessionsService, localChatSessionType } from '../../../common/chatSessionsService.js';
-import { LocalChatSessionUri, getChatSessionType } from '../../../common/model/chatUri.js';
+import { LocalChatSessionUri, getChatSessionType, isUntitledChatSession } from '../../../common/model/chatUri.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, getComputedDefaultSessionType, getDefaultNewChatSessionResource, getDefaultNewChatSessionType } from '../../../common/constants.js';
 import { AgentSessionsControl } from '../../agentSessions/agentSessionsControl.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
@@ -900,11 +900,62 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 	/**
 	 * Opens a new empty chat as a new tab (Cursor-style). Existing open tabs stay open.
+	 * If an empty/blank chat already exists (current or another open tab), activate it
+	 * instead of creating another empty session.
 	 */
 	async openNewSessionTab(): Promise<void> {
+		const reusableRef = await this.acquireReusableEmptyOpenTab(CancellationToken.None);
+		if (reusableRef) {
+			const resource = reusableRef.object.sessionResource;
+			reusableRef.dispose();
+			await this.activateOpenTab(resource);
+			return;
+		}
 		await this.clear();
 		// showModel already registered the new session as the active tab
 		this._widget.focusInput();
+	}
+
+	private static readonly MAX_EMPTY_TAB_PROBE = 5;
+
+	/**
+	 * Open tabs whose session type matches the configured default new-chat type.
+	 */
+	private getDefaultTypeTabResources(): URI[] {
+		const defaultType = getDefaultNewChatSessionType(this.configurationService, this.chatSessionsService, this.storageService);
+		return this._openTabs.tabs
+			.filter(tab => getChatSessionType(tab.resource) === defaultType)
+			.map(tab => tab.resource);
+	}
+
+	/**
+	 * Prefer an already-open blank chat over creating another empty session.
+	 * Untitled tabs are empty by definition; live models without requests are too.
+	 * Only reuse sessions that match the current default new-chat session type.
+	 */
+	private findReusableEmptySession(): URI | undefined {
+		const defaultType = getDefaultNewChatSessionType(this.configurationService, this.chatSessionsService, this.storageService);
+		const matchesDefault = (resource: URI) => getChatSessionType(resource) === defaultType;
+
+		const current = this._widget?.viewModel?.model;
+		if (current && !current.hasRequests && matchesDefault(current.sessionResource)) {
+			return current.sessionResource;
+		}
+
+		for (const resource of this.getDefaultTypeTabResources()) {
+			const live = this.chatService.getSession(resource);
+			if (live) {
+				if (!live.hasRequests) {
+					return resource;
+				}
+				continue;
+			}
+			if (isUntitledChatSession(resource)) {
+				return resource;
+			}
+		}
+
+		return undefined;
 	}
 
 	private async activateOpenTab(resource: URI): Promise<void> {
@@ -913,7 +964,19 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			this._widget.focusInput();
 			return;
 		}
-		await this.loadSession(resource);
+		const requested = resource;
+		const loaded = await this.loadSession(requested);
+		if (!loaded || this._widget.viewModel?.model !== loaded) {
+			return;
+		}
+		const shown = loaded.sessionResource;
+		if (shown && !isEqual(shown, requested)) {
+			// Empty sessions can be recycled into a new URI on reload.
+			if (this._openTabs.contains(requested)) {
+				this._openTabs.close(requested);
+			}
+			this._openTabs.openOrActivate(shown);
+		}
 		this._widget.focusInput();
 	}
 
@@ -1116,8 +1179,62 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	}
 
 	private async _applyModel(): Promise<void> {
-		const modelRef = await this.acquireTransferredOrPersistedSession(CancellationToken.None, 'ChatViewPane#applyModel');
+		let modelRef = await this.acquireTransferredOrPersistedSession(CancellationToken.None, 'ChatViewPane#applyModel');
+		if (!modelRef) {
+			// Fresh start / no persisted session: reuse an existing empty open tab
+			// instead of stacking another blank chat every launch.
+			modelRef = await this.acquireReusableEmptyOpenTab(CancellationToken.None);
+		}
 		await this.showModel(CancellationToken.None, modelRef, true, !modelRef);
+	}
+
+	/**
+	 * Load the first open tab that matches the default session type and has no
+	 * requests. Used on startup when there is no session to restore.
+	 */
+	private async acquireReusableEmptyOpenTab(token: CancellationToken): Promise<IChatModelReference | undefined> {
+		const syncHit = this.findReusableEmptySession();
+		if (syncHit) {
+			try {
+				const ref = await this.chatService.acquireOrLoadSession(syncHit, ChatAgentLocation.Chat, token, 'ChatViewPane#acquireReusableEmptyOpenTab');
+				if (ref && !ref.object.hasRequests) {
+					return ref;
+				}
+				ref?.dispose();
+			} catch (error) {
+				this.logService.trace(`[ChatViewPane] Failed to reuse empty open tab ${syncHit.toString()}`, error);
+			}
+		}
+
+		let probed = syncHit ? 1 : 0;
+		for (const tabResource of this.getDefaultTypeTabResources()) {
+			if (syncHit && isEqual(tabResource, syncHit)) {
+				continue; // already tried above
+			}
+			if (probed >= ChatViewPane.MAX_EMPTY_TAB_PROBE) {
+				break;
+			}
+			const live = this.chatService.getSession(tabResource);
+			if (live?.hasRequests) {
+				continue;
+			}
+			probed++;
+			try {
+				const ref = await this.chatService.acquireOrLoadSession(tabResource, ChatAgentLocation.Chat, token, 'ChatViewPane#acquireReusableEmptyOpenTab');
+				if (token.isCancellationRequested) {
+					ref?.dispose();
+					return undefined;
+				}
+				if (ref && !ref.object.hasRequests) {
+					return ref;
+				}
+				ref?.dispose();
+			} catch (error) {
+				this.logService.trace(`[ChatViewPane] Failed to probe open tab ${tabResource.toString()} for empty reuse`, error);
+			}
+		}
+
+		return undefined;
 	}
 
 	/**

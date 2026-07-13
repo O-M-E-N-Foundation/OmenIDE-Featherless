@@ -44,7 +44,6 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ensureFeatherlessChatExtensionReady } from '../../chat/common/featherlessSetup.js';
 import { FEATHERLESS_EXTENSION_BOOTSTRAP_COMMAND, FEATHERLESS_EXTENSION_HAS_KEY_COMMAND, FEATHERLESS_EXTENSION_SET_KEY_COMMAND, FEATHERLESS_EXTENSION_SIGN_IN_COMMAND } from '../../../services/chat/common/featherless.js';
-import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
 import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
@@ -87,19 +86,13 @@ type OnboardingActionEvent = {
 
 type EnterpriseSignInUiState = 'options' | 'instance' | 'progress';
 
+import {
+	getFeatherlessApiKeySecretStorageKey,
+	readFeatherlessCredentialSecrets,
+} from '../../../services/chat/common/featherlessSecrets.js';
+
 assertDefined(product.defaultChatAgent, 'Onboarding requires a default chat agent product configuration.');
 const defaultChat = product.defaultChatAgent;
-
-/** Extension id for the in-tree Copilot/Featherless extension (`extensions/copilot`). */
-const COPILOT_CHAT_EXTENSION_ID = new ExtensionIdentifier('OmenIDE.omenide-chat');
-/** Secret key used by BYOKStorageService for the Featherless provider API key. */
-const FEATHERLESS_API_KEY_SECRET = 'copilot-byok-Featherless-api-key';
-/** Secret key used by FeatherlessAuthService for OAuth access tokens. */
-const FEATHERLESS_OAUTH_ACCESS_TOKEN_SECRET = 'copilot-byok-Featherless-oauth-access-token';
-
-function getExtensionSecretStorageKey(extensionId: string, key: string): string {
-	return JSON.stringify({ extensionId, key });
-}
 
 /**
  * Variation A — Classic Wizard Modal
@@ -355,7 +348,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			// (activation is onStartupFinished), so extension commands are not
 			// available yet — but secret storage is always reachable from the workbench.
 			await this.secretStorageService.set(
-				getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_API_KEY_SECRET),
+				getFeatherlessApiKeySecretStorageKey(),
 				key,
 			);
 			this.featherlessApiKeyConfigured = true;
@@ -397,30 +390,21 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		}
 	}
 
-	private async _readFeatherlessOAuthFromStorage(): Promise<boolean> {
-		const value = await this.secretStorageService.get(
-			getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_OAUTH_ACCESS_TOKEN_SECRET),
-		);
-		return !!value?.trim();
-	}
-
-	private async _readFeatherlessApiKeyFromStorage(): Promise<string | undefined> {
-		const value = await this.secretStorageService.get(
-			getExtensionSecretStorageKey(COPILOT_CHAT_EXTENSION_ID.value, FEATHERLESS_API_KEY_SECRET),
-		);
-		return value?.trim() || undefined;
+	private async _readFeatherlessCredentials(): Promise<{ apiKey: string | undefined; oauthToken: string | undefined }> {
+		return readFeatherlessCredentialSecrets(this.secretStorageService);
 	}
 
 	private async _refreshFeatherlessApiKeyState(): Promise<boolean> {
-		this.featherlessApiKeyConfigured = !!(await this._readFeatherlessApiKeyFromStorage());
-		this.featherlessOAuthConfigured = await this._readFeatherlessOAuthFromStorage();
+		const { apiKey, oauthToken } = await this._readFeatherlessCredentials();
+		this.featherlessApiKeyConfigured = !!apiKey;
+		this.featherlessOAuthConfigured = !!oauthToken;
 
 		// Prefer the extension's view of credentials when secret-storage reads race or miss.
 		if (!this._hasFeatherlessCredentials()) {
 			try {
 				const hasFromExtension = await this.commandService.executeCommand<boolean>(FEATHERLESS_EXTENSION_HAS_KEY_COMMAND);
 				if (hasFromExtension) {
-					this.featherlessOAuthConfigured = true;
+					this.featherlessApiKeyConfigured = true;
 				}
 			} catch {
 				// Extension may not be activated yet.
