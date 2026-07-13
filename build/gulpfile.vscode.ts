@@ -97,6 +97,9 @@ const vscodeResourceIncludes = [
 	'out-build/vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.{svg,png}',
 	'out-build/vs/workbench/contrib/welcomeOnboarding/browser/media/*.{svg,png}',
 
+	// Featherless / Omen IDE startup splash
+	'out-build/vs/workbench/contrib/chat/browser/media/*.{svg,png}',
+
 	// Sessions
 	'out-build/vs/sessions/contrib/chat/browser/media/*.svg',
 	'out-build/vs/sessions/contrib/welcome/browser/media/*.svg',
